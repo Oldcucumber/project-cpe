@@ -23,6 +23,7 @@ use std::sync::Arc;
 use zbus::Connection;
 
 use crate::{
+    config::{ConfigManager, RefreshConfig},
     dbus::{
         get_airplane_mode, get_all_apn_contexts, get_data_connection_status, get_device_info_data,
         get_network_info_data, get_qos_info_data, get_radio_mode, get_roaming_status, get_serving_cell_info,
@@ -41,6 +42,7 @@ use crate::{
         read_uptime, sample_cpu_usage,
     },
 };
+use crate::state::FrontendRuntime;
 use std::process::Command;
 
 /// 处理 OPTIONS 请求（CORS 预检）
@@ -2593,7 +2595,6 @@ fn parse_ping_latency(output: &str) -> Option<f64> {
 
 // ============ 通话记录 API ============
 
-use crate::config::ConfigManager;
 use crate::sms_push::SmsPushSender;
 use crate::webhook::WebhookSender;
 
@@ -2812,6 +2813,79 @@ pub async fn test_sms_push_handler(
 // ============ OTA 更新功能 ============
 
 /// GET /api/ota/status - 获取 OTA 更新状态
+pub async fn get_refresh_config_handler(
+    State(config_manager): State<Arc<ConfigManager>>,
+    State(frontend_runtime): State<Arc<FrontendRuntime>>,
+) -> (StatusCode, Json<ApiResponse<crate::models::RefreshConfigResponse>>) {
+    let refresh = config_manager.get_refresh();
+    let response = crate::models::RefreshConfigResponse {
+        interval_ms: refresh.interval_ms,
+        watchdog_active_interval_ms: refresh.active_watchdog_interval_ms(),
+        watchdog_idle_interval_ms: refresh.idle_watchdog_interval_ms(),
+        heartbeat_timeout_ms: refresh.heartbeat_timeout_ms(),
+        frontend_connected: frontend_runtime
+            .is_recent(std::time::Duration::from_millis(refresh.heartbeat_timeout_ms())),
+    };
+
+    (
+        StatusCode::OK,
+        Json(ApiResponse::success_with_message("Success", response)),
+    )
+}
+
+pub async fn set_refresh_config_handler(
+    State(config_manager): State<Arc<ConfigManager>>,
+    State(frontend_runtime): State<Arc<FrontendRuntime>>,
+    Json(refresh): Json<RefreshConfig>,
+) -> (StatusCode, Json<ApiResponse<crate::models::RefreshConfigResponse>>) {
+    let refresh = refresh.sanitize();
+
+    match config_manager.set_refresh(refresh.clone()) {
+        Ok(_) => {
+            let response = crate::models::RefreshConfigResponse {
+                interval_ms: refresh.interval_ms,
+                watchdog_active_interval_ms: refresh.active_watchdog_interval_ms(),
+                watchdog_idle_interval_ms: refresh.idle_watchdog_interval_ms(),
+                heartbeat_timeout_ms: refresh.heartbeat_timeout_ms(),
+                frontend_connected: frontend_runtime
+                    .is_recent(std::time::Duration::from_millis(refresh.heartbeat_timeout_ms())),
+            };
+
+            (
+                StatusCode::OK,
+                Json(ApiResponse::success_with_message("Refresh config updated", response)),
+            )
+        }
+        Err(error) => (
+            StatusCode::OK,
+            Json(ApiResponse::error(format!(
+                "Failed to update refresh config: {}",
+                error
+            ))),
+        ),
+    }
+}
+
+pub async fn frontend_refresh_heartbeat_handler(
+    State(config_manager): State<Arc<ConfigManager>>,
+    State(frontend_runtime): State<Arc<FrontendRuntime>>,
+) -> (StatusCode, Json<ApiResponse<crate::models::RefreshConfigResponse>>) {
+    frontend_runtime.mark_seen();
+    let refresh = config_manager.get_refresh();
+    let response = crate::models::RefreshConfigResponse {
+        interval_ms: refresh.interval_ms,
+        watchdog_active_interval_ms: refresh.active_watchdog_interval_ms(),
+        watchdog_idle_interval_ms: refresh.idle_watchdog_interval_ms(),
+        heartbeat_timeout_ms: refresh.heartbeat_timeout_ms(),
+        frontend_connected: true,
+    };
+
+    (
+        StatusCode::OK,
+        Json(ApiResponse::success_with_message("Refresh heartbeat accepted", response)),
+    )
+}
+
 pub async fn get_ota_status_handler() -> impl IntoResponse {
     let status = crate::ota::get_ota_status();
     (

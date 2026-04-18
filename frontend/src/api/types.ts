@@ -698,6 +698,14 @@ export const DEFAULT_SMS_PUSH_BODY_TEMPLATE = `时间: {{timestamp}}
 // ========== OTA 更新类型 ==========
 
 // OTA 元数据
+export interface RefreshConfigResponse {
+  interval_ms: number
+  watchdog_active_interval_ms: number
+  watchdog_idle_interval_ms: number
+  heartbeat_timeout_ms: number
+  frontend_connected: boolean
+}
+
 export interface OtaMeta {
   version: string
   commit: string

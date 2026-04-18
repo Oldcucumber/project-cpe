@@ -49,6 +49,8 @@ export default defineConfig({
   },
 
   build: {
+    target: 'es2020',
+    reportCompressedSize: false,
     // outDir: '../www',
     // emptyOutDir: true,
   },

@@ -241,6 +241,62 @@ impl Default for SmsPushConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshConfig {
+    #[serde(default = "default_refresh_interval_ms")]
+    pub interval_ms: u64,
+}
+
+fn default_refresh_interval_ms() -> u64 {
+    5_000
+}
+
+impl Default for RefreshConfig {
+    fn default() -> Self {
+        Self {
+            interval_ms: default_refresh_interval_ms(),
+        }
+    }
+}
+
+impl RefreshConfig {
+    pub fn sanitize(mut self) -> Self {
+        self.interval_ms = sanitize_refresh_interval_ms(self.interval_ms);
+        self
+    }
+
+    pub fn heartbeat_timeout_ms(&self) -> u64 {
+        let base = self.interval_ms.max(1_000);
+        if self.interval_ms == 0 {
+            30_000
+        } else {
+            (base.saturating_mul(4)).clamp(15_000, 120_000)
+        }
+    }
+
+    pub fn active_watchdog_interval_ms(&self) -> u64 {
+        if self.interval_ms == 0 {
+            15_000
+        } else {
+            self.interval_ms.max(5_000)
+        }
+    }
+
+    pub fn idle_watchdog_interval_ms(&self) -> u64 {
+        self.active_watchdog_interval_ms()
+            .saturating_mul(6)
+            .max(60_000)
+    }
+}
+
+fn sanitize_refresh_interval_ms(interval_ms: u64) -> u64 {
+    match interval_ms {
+        0 => 0,
+        1..=999 => 1_000,
+        value => value.min(60_000),
+    }
+}
+
 /// 应用配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
@@ -248,8 +304,10 @@ pub struct AppConfig {
     pub webhook: WebhookConfig,
     #[serde(default)]
     pub sms_push: SmsPushConfig,
-    // 未来可以添加更多配置项
+    #[serde(default)]
+    pub refresh: RefreshConfig,
 }
+
 
 /// 配置管理器
 pub struct ConfigManager {
@@ -264,7 +322,10 @@ impl ConfigManager {
             match fs::read_to_string(&config_path) {
                 Ok(content) => {
                     match serde_json::from_str::<AppConfig>(&content) {
-                        Ok(cfg) => cfg,
+                        Ok(cfg) => AppConfig {
+                            refresh: cfg.refresh.sanitize(),
+                            ..cfg
+                        },
                         Err(e) => {
                             warn!(error = %e, "Failed to parse config file, using defaults");
                             AppConfig::default()
@@ -314,12 +375,10 @@ impl ConfigManager {
         self.save()
     }
 
-    /// 获取短信推送配置
     pub fn get_sms_push(&self) -> SmsPushConfig {
         self.config.read().unwrap().sms_push.clone()
     }
 
-    /// 更新短信推送配置
     pub fn set_sms_push(&self, sms_push: SmsPushConfig) -> Result<(), String> {
         {
             let mut config = self.config.write().unwrap();
@@ -327,13 +386,27 @@ impl ConfigManager {
         }
         self.save()
     }
-    
-    /// 更新整个配置
+
+    pub fn get_refresh(&self) -> RefreshConfig {
+        self.config.read().unwrap().refresh.clone().sanitize()
+    }
+
+    pub fn set_refresh(&self, refresh: RefreshConfig) -> Result<(), String> {
+        {
+            let mut config = self.config.write().unwrap();
+            config.refresh = refresh.sanitize();
+        }
+        self.save()
+    }
+
     #[allow(dead_code)]
     pub fn set(&self, config: AppConfig) -> Result<(), String> {
         {
             let mut current = self.config.write().unwrap();
-            *current = config;
+            *current = AppConfig {
+                refresh: config.refresh.sanitize(),
+                ..config
+            };
         }
         self.save()
     }
@@ -371,7 +444,10 @@ impl ConfigManager {
         
         {
             let mut config = self.config.write().unwrap();
-            *config = new_config;
+            *config = AppConfig {
+                refresh: new_config.refresh.sanitize(),
+                ..new_config
+            };
         }
         
         Ok(())
@@ -379,19 +455,20 @@ impl ConfigManager {
 }
 
 /// 获取默认配置文件路径
-pub fn get_default_config_path() -> PathBuf {
-    // 尝试 /data/config.json（设备上的持久化目录）
-    let device_path = PathBuf::from("/data/config.json");
-    if device_path.parent().map(|p| p.exists()).unwrap_or(false) {
-        return device_path;
+pub fn get_persistent_root_dir() -> PathBuf {
+    let device_root = PathBuf::from("/data");
+    if device_root.exists() {
+        return device_root;
     }
-    
-    // 回退到当前目录
+
     std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .and_then(|path| path.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("config.json")
+}
+
+pub fn get_default_config_path() -> PathBuf {
+    get_persistent_root_dir().join("config.json")
 }
 
 fn normalize_newlines(content: &str) -> String {
@@ -678,4 +755,3 @@ mod tests {
         assert!(loader_contains_ota_command(&loader));
     }
 }
-

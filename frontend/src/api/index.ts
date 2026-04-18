@@ -70,6 +70,7 @@ import type {
   WebhookConfig,
   WebhookTestResponse,
   SmsPushConfig,
+  RefreshConfigResponse,
   OtaStatusResponse,
   OtaUploadResponse,
 } from './types'
@@ -546,14 +547,10 @@ class UDX710API {
     })
   }
 
-  // ========== 短信推送配置功能 ==========
-
-  // 获取短信推送配置
   async getSmsPushConfig() {
     return request<ApiResponse<SmsPushConfig>>('/sms-push/config')
   }
 
-  // 设置短信推送配置
   async setSmsPushConfig(config: SmsPushConfig) {
     return request<ApiResponse<Record<string, unknown>>>('/sms-push/config', {
       method: 'POST',
@@ -561,16 +558,30 @@ class UDX710API {
     })
   }
 
-  // 测试短信推送连接
   async testSmsPush() {
     return request<ApiResponse<WebhookTestResponse>>('/sms-push/test', {
       method: 'POST',
     })
   }
 
-  // ========== init.sh 管理 ==========
+  async getRefreshConfig() {
+    return request<ApiResponse<RefreshConfigResponse>>('/refresh/config')
+  }
 
-  // 获取 init.sh 内容和 loader.sh 挂载状态
+  async setRefreshConfig(intervalMs: number) {
+    return request<ApiResponse<RefreshConfigResponse>>('/refresh/config', {
+      method: 'POST',
+      body: JSON.stringify({ interval_ms: intervalMs }),
+    })
+  }
+
+  async sendRefreshHeartbeat() {
+    return request<ApiResponse<RefreshConfigResponse>>('/refresh/heartbeat', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
   async getInitScript() {
     return request<ApiResponse<InitScriptResponse>>('/init-script')
   }

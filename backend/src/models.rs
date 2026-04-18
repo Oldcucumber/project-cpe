@@ -1111,6 +1111,15 @@ pub struct WebhookTestResponse {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct RefreshConfigResponse {
+    pub interval_ms: u64,
+    pub watchdog_active_interval_ms: u64,
+    pub watchdog_idle_interval_ms: u64,
+    pub heartbeat_timeout_ms: u64,
+    pub frontend_connected: bool,
+}
+
 // ============ OTA 更新模型 ============
 
 /// OTA 更新包元数据（meta.json 格式）

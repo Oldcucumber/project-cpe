@@ -52,6 +52,7 @@ import {
 } from '@mui/icons-material'
 import { api } from '../api'
 import ErrorSnackbar from '../components/ErrorSnackbar'
+import { useRefreshInterval } from '../contexts/RefreshContext'
 import type { UsbModeResponse, AirplaneModeResponse, WebhookConfig, SmsPushConfig, SmsPushProvider } from '../api/types'
 import { DEFAULT_SMS_TEMPLATE, DEFAULT_CALL_TEMPLATE, DEFAULT_SMS_PUSH_TITLE_TEMPLATE, DEFAULT_SMS_PUSH_BODY_TEMPLATE } from '../api/types'
 
@@ -147,6 +148,7 @@ function createDefaultSmsPushConfig(): SmsPushConfig {
 }
 
 export default function ConfigurationPage() {
+  const { refreshInterval, refreshKey } = useRefreshInterval()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -241,11 +243,12 @@ export default function ConfigurationPage() {
   useEffect(() => {
     void loadData()
     // 每30秒自动检查健康状态
-    const interval = setInterval(() => {
+    const pollInterval = refreshInterval > 0 ? Math.max(refreshInterval * 6, 30000) : 60000
+    const interval = window.setInterval(() => {
       void checkHealth()
-    }, 30000)
-    return () => clearInterval(interval)
-  }, [checkHealth, loadData])
+    }, pollInterval)
+    return () => window.clearInterval(interval)
+  }, [checkHealth, loadData, refreshInterval, refreshKey])
 
   const handleAccordionChange = (panel: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
     setExpanded(isExpanded ? panel : false)
