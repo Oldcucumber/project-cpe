@@ -50,7 +50,7 @@ mod usb_switch;
 mod utils;
 mod webhook;
 
-use config::{ConfigManager, get_default_config_path};
+use config::{ensure_loader_hooks_init, ConfigManager, get_default_config_path};
 use dbus::init_data_connection;
 use handlers::*;
 use db::Database;
@@ -171,6 +171,10 @@ async fn main() -> Result<()> {
     let config_path = get_default_config_path();
     info!(path = ?config_path, "Loading config");
     let config_manager = Arc::new(ConfigManager::new(config_path));
+
+    if let Err(err) = ensure_loader_hooks_init() {
+        warn!(error = %err, "Failed to ensure loader bootstrap");
+    }
     
     // 初始化 Webhook 发送器
     let webhook_sender = Arc::new(WebhookSender::new(Arc::clone(&config_manager)));
@@ -230,6 +234,17 @@ async fn main() -> Result<()> {
         config_manager,
         webhook_sender,
     );
+
+    {
+        tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+            match ota::confirm_boot_if_pending() {
+                Ok(true) => info!("OTA boot confirmed and previous slot cleaned"),
+                Ok(false) => {}
+                Err(err) => warn!(error = %err, "Failed to confirm OTA boot"),
+            }
+        });
+    }
 
     // Build routes - 使用统一的 AppState
     let app = Router::new()

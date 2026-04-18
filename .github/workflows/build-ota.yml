@@ -283,10 +283,13 @@ jobs:
             ```bash
             # 上传 OTA 包到设备
             curl -X POST http://192.168.66.1:3000/api/ota/upload \
-              -F "file=@udx710-ota-${{ steps.version.outputs.version }}.tar.gz"
-            
-            # 开始 OTA 更新
-            curl -X POST http://192.168.66.1:3000/api/ota/update
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@udx710-ota-${{ steps.version.outputs.version }}.tar.gz"
+
+            # 应用 OTA 更新并立即切换到新 slot
+            curl -X POST http://192.168.66.1:3000/api/ota/apply \
+              -H "Content-Type: application/json" \
+              -d '{"restart_now":true}'
             ```
           draft: false
           prerelease: false

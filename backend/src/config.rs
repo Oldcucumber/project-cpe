@@ -20,7 +20,109 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
-const DEFAULT_LOADER_SCRIPT: &str = "#!/bin/sh\n/home/root/ttyd/start.sh &\n/home/root/udx710 -p 80 &\n";
+const DEFAULT_LOADER_SCRIPT: &str = r#"#!/bin/sh
+# UDX710 OTA bootstrap. Falls back to the legacy root install when no slot state exists.
+OTA_ROOT="/home/root/ota"
+OTA_SLOT_ROOT="$OTA_ROOT/slots"
+OTA_STATE_FILE="$OTA_ROOT/state.env"
+OTA_LEGACY_BINARY="/home/root/udx710"
+OTA_PORT="80"
+OTA_SLOT_A="slot-a"
+OTA_SLOT_B="slot-b"
+
+load_ota_state() {
+    ACTIVE_SLOT="legacy"
+    BOOT_STATE="stable"
+    PENDING_SLOT=""
+    FALLBACK_SLOT=""
+    TRIAL_ATTEMPTS="0"
+
+    if [ -f "$OTA_STATE_FILE" ]; then
+        # shellcheck disable=SC1090
+        . "$OTA_STATE_FILE" 2>/dev/null || true
+    fi
+}
+
+write_ota_state() {
+    mkdir -p "$OTA_ROOT"
+    cat > "$OTA_STATE_FILE" <<EOF
+ACTIVE_SLOT=${ACTIVE_SLOT}
+BOOT_STATE=${BOOT_STATE}
+PENDING_SLOT=${PENDING_SLOT}
+FALLBACK_SLOT=${FALLBACK_SLOT}
+TRIAL_ATTEMPTS=${TRIAL_ATTEMPTS}
+EOF
+}
+
+cleanup_slot_dir() {
+    local slot_name="$1"
+    if [ -n "$slot_name" ] && [ -d "$OTA_SLOT_ROOT/$slot_name" ]; then
+        rm -rf "$OTA_SLOT_ROOT/$slot_name"
+    fi
+}
+
+select_backend() {
+    case "$ACTIVE_SLOT" in
+        slot-a|slot-b)
+            if [ -x "$OTA_SLOT_ROOT/$ACTIVE_SLOT/udx710" ]; then
+                echo "$OTA_SLOT_ROOT/$ACTIVE_SLOT/udx710"
+                return 0
+            fi
+            ;;
+    esac
+
+    if [ -x "$OTA_LEGACY_BINARY" ]; then
+        echo "$OTA_LEGACY_BINARY"
+        return 0
+    fi
+
+    return 1
+}
+
+resolve_backend_slot() {
+    case "$1" in
+        "$OTA_SLOT_ROOT/$OTA_SLOT_A/udx710")
+            echo "$OTA_SLOT_A"
+            ;;
+        "$OTA_SLOT_ROOT/$OTA_SLOT_B/udx710")
+            echo "$OTA_SLOT_B"
+            ;;
+        "$OTA_LEGACY_BINARY")
+            echo "legacy"
+            ;;
+        *)
+            echo "legacy"
+            ;;
+    esac
+}
+
+load_ota_state
+
+if [ "$BOOT_STATE" = "trial" ]; then
+    if [ "${TRIAL_ATTEMPTS:-0}" = "0" ]; then
+        ACTIVE_SLOT="${PENDING_SLOT:-$ACTIVE_SLOT}"
+        TRIAL_ATTEMPTS=1
+        write_ota_state
+    else
+        failed_slot="$PENDING_SLOT"
+        ACTIVE_SLOT="${FALLBACK_SLOT:-legacy}"
+        BOOT_STATE=stable
+        PENDING_SLOT=""
+        FALLBACK_SLOT=""
+        TRIAL_ATTEMPTS=0
+        write_ota_state
+        cleanup_slot_dir "$failed_slot"
+    fi
+fi
+
+export UDX710_OTA_STATE_FILE="$OTA_STATE_FILE"
+export UDX710_FALLBACK_SLOT="$FALLBACK_SLOT"
+
+/home/root/ttyd/start.sh &
+backend_bin="$(select_backend)" || exit 1
+export UDX710_ACTIVE_SLOT="$(resolve_backend_slot "$backend_bin")"
+"$backend_bin" -p "$OTA_PORT" &
+"#;
 const LOADER_SCRIPT_PATH: &str = "/home/root/loader.sh";
 const INIT_SCRIPT_PATH: &str = "/home/root/init.sh";
 const INIT_SCRIPT_LOADER_COMMAND: &str = "sh /home/root/init.sh &";
@@ -251,6 +353,38 @@ fn append_init_command_to_loader(content: &str) -> String {
     format!("{}\n{}\n", base, INIT_SCRIPT_LOADER_COMMAND)
 }
 
+fn loader_uses_ab_bootstrap(content: &str) -> bool {
+    content.contains("UDX710 OTA bootstrap")
+        || content.contains("OTA_STATE_FILE=\"/home/root/ota/state.env\"")
+}
+
+fn loader_is_plain_legacy_bootstrap(content: &str) -> bool {
+    let script_lines: Vec<&str> = content
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .filter(|line| !line.starts_with('#') || *line == "#!/bin/sh")
+        .collect();
+
+    if script_lines.len() < 3 {
+        return false;
+    }
+
+    if script_lines[0] != "#!/bin/sh" {
+        return false;
+    }
+
+    if script_lines[1] != "/home/root/ttyd/start.sh &"
+        || script_lines[2] != "/home/root/udx710 -p 80 &"
+    {
+        return false;
+    }
+
+    script_lines[3..]
+        .iter()
+        .all(|line| *line == INIT_SCRIPT_LOADER_COMMAND)
+}
+
 fn set_executable_permissions(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -267,16 +401,26 @@ fn set_executable_permissions(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn ensure_loader_hooks_init() -> Result<(), String> {
+pub fn ensure_loader_hooks_init() -> Result<(), String> {
     let loader_path = PathBuf::from(LOADER_SCRIPT_PATH);
     let current_content = if loader_path.exists() {
         fs::read_to_string(&loader_path)
             .map_err(|e| format!("Failed to read loader.sh: {}", e))?
     } else {
-        DEFAULT_LOADER_SCRIPT.to_string()
+        String::new()
     };
 
-    let updated_content = append_init_command_to_loader(&current_content);
+    let base_content = if loader_uses_ab_bootstrap(&current_content) {
+        current_content
+    } else if current_content.trim().is_empty()
+        || loader_is_plain_legacy_bootstrap(&current_content)
+    {
+        DEFAULT_LOADER_SCRIPT.to_string()
+    } else {
+        current_content
+    };
+
+    let updated_content = append_init_command_to_loader(&base_content);
 
     if let Some(parent) = loader_path.parent() {
         fs::create_dir_all(parent)
