@@ -19,7 +19,9 @@ import TopBar from './TopBar'
 
 const DRAWER_WIDTH = 240
 const DEFAULT_REFRESH_INTERVAL = 5000
-const HEARTBEAT_MIN_INTERVAL = 15000
+// Keep the heartbeat comfortably below the backend timeout floor so 1s/3s polling
+// does not drift onto the timeout boundary.
+const HEARTBEAT_MIN_INTERVAL = 5000
 
 function getHeartbeatInterval(refreshInterval: number) {
   if (refreshInterval <= 0) {
