@@ -116,15 +116,6 @@ fn slot_binary_path(slot: OtaSlot) -> PathBuf {
     }
 }
 
-fn slot_www_path(slot: OtaSlot) -> PathBuf {
-    match slot {
-        OtaSlot::Legacy => PathBuf::from(OTA_WWW_PATH),
-        OtaSlot::SlotA | OtaSlot::SlotB => slot_directory(slot)
-            .unwrap_or_else(|| PathBuf::from(OTA_SLOT_ROOT))
-            .join("www"),
-    }
-}
-
 fn slot_meta_path(slot: OtaSlot) -> Option<PathBuf> {
     slot_directory(slot).map(|dir| dir.join("meta.json"))
 }

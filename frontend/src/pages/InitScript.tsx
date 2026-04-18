@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import {
   Alert,
   AlertTitle,
@@ -281,7 +281,7 @@ export default function InitScriptPage() {
   const sensitiveLineMap = buildSensitiveLineMap(sensitiveMatches)
   const scriptLines = script.split('\n')
 
-  const loadScript = async () => {
+  const loadScript = useCallback(async () => {
     setLoading(true)
     setError(null)
 
@@ -298,12 +298,11 @@ export default function InitScriptPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     void loadScript()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadScript])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
