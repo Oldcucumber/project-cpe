@@ -148,6 +148,14 @@ fn next_slot(current_slot: OtaSlot) -> OtaSlot {
     }
 }
 
+fn inactive_slots(active_slot: OtaSlot) -> [OtaSlot; 2] {
+    match active_slot {
+        OtaSlot::Legacy => [OtaSlot::SlotA, OtaSlot::SlotB],
+        OtaSlot::SlotA => [OtaSlot::Legacy, OtaSlot::SlotB],
+        OtaSlot::SlotB => [OtaSlot::Legacy, OtaSlot::SlotA],
+    }
+}
+
 fn parse_runtime_state(content: &str) -> OtaRuntimeState {
     let mut values = HashMap::new();
 
@@ -260,6 +268,12 @@ fn remove_slot_artifacts(slot: OtaSlot) -> Result<(), String> {
             }
             Ok(())
         }
+    }
+}
+
+fn cleanup_inactive_slot_artifacts(active_slot: OtaSlot) {
+    for slot in inactive_slots(active_slot) {
+        let _ = remove_slot_artifacts(slot);
     }
 }
 
@@ -546,25 +560,21 @@ pub fn confirm_boot_if_pending() -> Result<bool, String> {
     let current_slot = detect_current_slot();
 
     if current_slot == state.active_slot {
-        if let Some(previous_slot) = state.fallback_slot {
-            if !matches!(previous_slot, OtaSlot::Legacy) {
-                let _ = remove_slot_artifacts(previous_slot);
-            }
-        }
         state.boot_state = OtaBootState::Stable;
         state.fallback_slot = None;
         state.trial_attempts = 0;
         write_runtime_state(&state)?;
+        cleanup_inactive_slot_artifacts(current_slot);
         return Ok(true);
     }
 
     if Some(current_slot) == state.fallback_slot {
-        let _ = remove_slot_artifacts(state.active_slot);
         state.active_slot = current_slot;
         state.boot_state = OtaBootState::Stable;
         state.fallback_slot = None;
         state.trial_attempts = 0;
         write_runtime_state(&state)?;
+        cleanup_inactive_slot_artifacts(current_slot);
         return Ok(true);
     }
 
@@ -649,4 +659,24 @@ fn fix_file_permissions(root: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{inactive_slots, OtaSlot};
+
+    #[test]
+    fn legacy_boot_keeps_only_ab_slots_in_cleanup_set() {
+        assert_eq!(inactive_slots(OtaSlot::Legacy), [OtaSlot::SlotA, OtaSlot::SlotB]);
+    }
+
+    #[test]
+    fn slot_a_boot_cleans_legacy_and_slot_b() {
+        assert_eq!(inactive_slots(OtaSlot::SlotA), [OtaSlot::Legacy, OtaSlot::SlotB]);
+    }
+
+    #[test]
+    fn slot_b_boot_cleans_legacy_and_slot_a() {
+        assert_eq!(inactive_slots(OtaSlot::SlotB), [OtaSlot::Legacy, OtaSlot::SlotA]);
+    }
 }

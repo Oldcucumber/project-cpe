@@ -21,6 +21,8 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material'
 import {
   CheckCircle,
@@ -257,6 +259,8 @@ function buildSensitiveLineMap(matches: SensitiveCommandMatch[]): Record<number,
 }
 
 export default function InitScriptPage() {
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -273,6 +277,17 @@ export default function InitScriptPage() {
   const sensitiveMatches = analyzeSensitiveCommands(script)
   const sensitiveLineMap = buildSensitiveLineMap(sensitiveMatches)
   const scriptLines = script.split('\n')
+  const cardContentSx = {
+    p: { xs: 2, sm: 3 },
+    '&:last-child': {
+      pb: { xs: 2, sm: 3 },
+    },
+  }
+  const startupRows = [
+    { label: 'loader.sh 路径', value: loaderPath },
+    { label: 'init.sh 路径', value: initPath },
+    { label: '固定启动命令', value: 'sh /home/root/init.sh &' },
+  ]
 
   const loadScript = useCallback(async () => {
     setLoading(true)
@@ -335,9 +350,15 @@ export default function InitScriptPage() {
   }
 
   return (
-    <Box>
-      <Box mb={3}>
-        <Typography variant="h4" gutterBottom fontWeight={600}>
+    <Box sx={{ width: '100%', maxWidth: 1120, mx: 'auto' }}>
+      <Box mb={{ xs: 2.5, sm: 3 }}>
+        <Typography
+          variant="h4"
+          component="h1"
+          gutterBottom
+          fontWeight={600}
+          sx={{ fontSize: { xs: '2rem', sm: '2.25rem' }, lineHeight: 1.15 }}
+        >
           开机脚本
         </Typography>
         <Typography variant="body2" color="text.secondary">
@@ -363,20 +384,20 @@ export default function InitScriptPage() {
         </Snackbar>
       )}
 
-      <Stack spacing={3}>
+      <Stack spacing={{ xs: 2, sm: 3 }}>
         <Card>
-          <CardContent>
+          <CardContent sx={cardContentSx}>
             <Box
               display="flex"
               justifyContent="space-between"
               alignItems={{ xs: 'flex-start', md: 'center' }}
               flexDirection={{ xs: 'column', md: 'row' }}
-              gap={2}
-              mb={2}
+              gap={{ xs: 1.5, sm: 2 }}
+              mb={{ xs: 2, sm: 2.5 }}
             >
-              <Box>
+              <Box sx={{ width: '100%' }}>
                 <Typography variant="h6">脚本编辑</Typography>
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" mt={1}>
+                <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" mt={1}>
                   <Chip
                     label={loaderHooked ? 'loader.sh 已挂载 init.sh' : 'loader.sh 尚未挂载 init.sh'}
                     color={loaderHooked ? 'success' : 'warning'}
@@ -398,12 +419,17 @@ export default function InitScriptPage() {
                   />
                 </Stack>
               </Box>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1.25}
+                sx={{ width: { xs: '100%', md: 'auto' } }}
+              >
                 <Button
                   variant="contained"
                   onClick={() => void handleSave()}
                   disabled={saving}
                   startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <Save />}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
                 >
                   {saving ? '保存中...' : '保存脚本'}
                 </Button>
@@ -412,6 +438,7 @@ export default function InitScriptPage() {
                   onClick={() => void loadScript()}
                   disabled={loading || saving}
                   startIcon={<Refresh />}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
                 >
                   重新加载
                 </Button>
@@ -420,6 +447,7 @@ export default function InitScriptPage() {
                   color="warning"
                   onClick={() => setScript('')}
                   disabled={saving}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
                 >
                   清空编辑器
                 </Button>
@@ -437,7 +465,7 @@ export default function InitScriptPage() {
             <TextField
               fullWidth
               multiline
-              minRows={18}
+              minRows={isMobile ? 14 : 18}
               label="init.sh 内容"
               value={script}
               onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setScript(event.target.value)}
@@ -447,6 +475,7 @@ export default function InitScriptPage() {
                 sx: {
                   fontFamily: 'monospace',
                   alignItems: 'flex-start',
+                  fontSize: { xs: '0.95rem', sm: '1rem' },
                 },
               }}
             />
@@ -504,6 +533,36 @@ export default function InitScriptPage() {
                 />
               </Box>
 
+              {isMobile ? (
+                <Stack spacing={1.25}>
+                  {startupRows.map((row) => (
+                    <Box
+                      key={row.label}
+                      sx={{
+                        p: 1.5,
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 1.5,
+                        minWidth: 0,
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary">
+                        {row.label}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          mt: 0.5,
+                          fontFamily: 'monospace',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {row.value}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
               <TableContainer>
                 <Table size="small">
                   <TableBody>
@@ -522,6 +581,7 @@ export default function InitScriptPage() {
                   </TableBody>
                 </Table>
               </TableContainer>
+              )}
             </CardContent>
           </Card>
         </Box>
@@ -617,9 +677,9 @@ export default function InitScriptPage() {
                         key={`${lineNumber}-${line}`}
                         sx={{
                           display: 'grid',
-                          gridTemplateColumns: '56px minmax(0, 1fr)',
-                          gap: 2,
-                          px: 2,
+                          gridTemplateColumns: isMobile ? '40px minmax(0, 1fr)' : '56px minmax(0, 1fr)',
+                          gap: isMobile ? 1 : 2,
+                          px: isMobile ? 1.25 : 2,
                           py: 0.75,
                           borderBottom: index === scriptLines.length - 1 ? 'none' : 1,
                           borderColor: 'divider',

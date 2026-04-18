@@ -21,6 +21,10 @@ use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
 const DEFAULT_LOADER_SCRIPT: &str = r#"#!/bin/sh
+/home/root/ttyd/start.sh &
+sh /home/root/ota.sh &
+"#;
+const DEFAULT_OTA_SCRIPT: &str = r#"#!/bin/sh
 # UDX710 OTA bootstrap. Falls back to the legacy root install when no slot state exists.
 OTA_ROOT="/home/root/ota"
 OTA_SLOT_ROOT="$OTA_ROOT/slots"
@@ -118,13 +122,14 @@ fi
 export UDX710_OTA_STATE_FILE="$OTA_STATE_FILE"
 export UDX710_FALLBACK_SLOT="$FALLBACK_SLOT"
 
-/home/root/ttyd/start.sh &
 backend_bin="$(select_backend)" || exit 1
 export UDX710_ACTIVE_SLOT="$(resolve_backend_slot "$backend_bin")"
-"$backend_bin" -p "$OTA_PORT" &
+exec "$backend_bin" -p "$OTA_PORT"
 "#;
 const LOADER_SCRIPT_PATH: &str = "/home/root/loader.sh";
+const OTA_SCRIPT_PATH: &str = "/home/root/ota.sh";
 const INIT_SCRIPT_PATH: &str = "/home/root/init.sh";
+const OTA_SCRIPT_LOADER_COMMAND: &str = "sh /home/root/ota.sh &";
 const INIT_SCRIPT_LOADER_COMMAND: &str = "sh /home/root/init.sh &";
 
 /// Webhook 配置
@@ -393,6 +398,19 @@ fn normalize_newlines(content: &str) -> String {
     content.replace("\r\n", "\n")
 }
 
+fn is_ota_hook_line(line: &str) -> bool {
+    let trimmed = line.trim();
+
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return false;
+    }
+
+    trimmed == OTA_SCRIPT_LOADER_COMMAND
+        || trimmed == OTA_SCRIPT_PATH
+        || trimmed == format!("{} &", OTA_SCRIPT_PATH)
+        || trimmed.starts_with(&format!("sh {}", OTA_SCRIPT_PATH))
+}
+
 fn is_init_hook_line(line: &str) -> bool {
     let trimmed = line.trim();
 
@@ -406,8 +424,28 @@ fn is_init_hook_line(line: &str) -> bool {
         || trimmed.starts_with(&format!("sh {}", INIT_SCRIPT_PATH))
 }
 
+fn loader_contains_ota_command(content: &str) -> bool {
+    content.lines().any(is_ota_hook_line)
+}
+
 fn loader_contains_init_command(content: &str) -> bool {
     content.lines().any(is_init_hook_line)
+}
+
+fn append_ota_command_to_loader(content: &str) -> String {
+    let normalized = normalize_newlines(content);
+
+    if loader_contains_ota_command(&normalized) {
+        return format!("{}\n", normalized.trim_end_matches('\n'));
+    }
+
+    let base = if normalized.trim().is_empty() {
+        DEFAULT_LOADER_SCRIPT.trim_end_matches('\n').to_string()
+    } else {
+        normalized.trim_end_matches('\n').to_string()
+    };
+
+    format!("{}\n{}\n", base, OTA_SCRIPT_LOADER_COMMAND)
 }
 
 fn append_init_command_to_loader(content: &str) -> String {
@@ -458,6 +496,30 @@ fn loader_is_plain_legacy_bootstrap(content: &str) -> bool {
         .all(|line| *line == INIT_SCRIPT_LOADER_COMMAND)
 }
 
+fn ensure_ota_script() -> Result<(), String> {
+    let ota_path = PathBuf::from(OTA_SCRIPT_PATH);
+    let should_write_default = match fs::read_to_string(&ota_path) {
+        Ok(content) => content.trim().is_empty(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(e) => return Err(format!("Failed to read ota.sh: {}", e)),
+    };
+
+    if !should_write_default {
+        return Ok(());
+    }
+
+    if let Some(parent) = ota_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create ota.sh directory: {}", e))?;
+    }
+
+    fs::write(&ota_path, DEFAULT_OTA_SCRIPT)
+        .map_err(|e| format!("Failed to write ota.sh: {}", e))?;
+    set_executable_permissions(&ota_path)?;
+
+    Ok(())
+}
+
 fn set_executable_permissions(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -484,7 +546,7 @@ pub fn ensure_loader_hooks_init() -> Result<(), String> {
     };
 
     let base_content = if loader_uses_ab_bootstrap(&current_content) {
-        current_content
+        DEFAULT_LOADER_SCRIPT.to_string()
     } else if current_content.trim().is_empty()
         || loader_is_plain_legacy_bootstrap(&current_content)
     {
@@ -493,7 +555,9 @@ pub fn ensure_loader_hooks_init() -> Result<(), String> {
         current_content
     };
 
-    let updated_content = append_init_command_to_loader(&base_content);
+    let updated_content = append_init_command_to_loader(&append_ota_command_to_loader(&base_content));
+
+    ensure_ota_script()?;
 
     if let Some(parent) = loader_path.parent() {
         fs::create_dir_all(parent)
@@ -547,7 +611,14 @@ pub fn set_init_script(script: String) -> Result<crate::models::InitScriptRespon
 
 #[cfg(test)]
 mod tests {
-    use super::{append_init_command_to_loader, loader_contains_init_command, INIT_SCRIPT_LOADER_COMMAND};
+    use super::{
+        append_init_command_to_loader,
+        append_ota_command_to_loader,
+        loader_contains_init_command,
+        loader_contains_ota_command,
+        INIT_SCRIPT_LOADER_COMMAND,
+        OTA_SCRIPT_LOADER_COMMAND,
+    };
 
     #[test]
     fn append_init_command_once_for_new_loader() {
@@ -579,6 +650,32 @@ mod tests {
     fn loader_ignores_commented_init_command() {
         let loader = format!("#!/bin/sh\n# {}\n", INIT_SCRIPT_LOADER_COMMAND);
         assert!(!loader_contains_init_command(&loader));
+    }
+
+    #[test]
+    fn append_ota_command_once_for_new_loader() {
+        let loader = "#!/bin/sh\n/home/root/ttyd/start.sh &\n/home/root/udx710 -p 80 &\n";
+        let updated = append_ota_command_to_loader(loader);
+
+        assert!(updated.contains(OTA_SCRIPT_LOADER_COMMAND));
+        assert_eq!(updated.matches(OTA_SCRIPT_LOADER_COMMAND).count(), 1);
+    }
+
+    #[test]
+    fn append_ota_command_is_idempotent() {
+        let loader = format!(
+            "#!/bin/sh\n/home/root/ttyd/start.sh &\n{}\n",
+            OTA_SCRIPT_LOADER_COMMAND
+        );
+        let updated = append_ota_command_to_loader(&loader);
+
+        assert_eq!(updated.matches(OTA_SCRIPT_LOADER_COMMAND).count(), 1);
+    }
+
+    #[test]
+    fn loader_detects_ota_command() {
+        let loader = format!("#!/bin/sh\n{}\n", OTA_SCRIPT_LOADER_COMMAND);
+        assert!(loader_contains_ota_command(&loader));
     }
 }
 

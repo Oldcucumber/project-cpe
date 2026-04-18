@@ -8,7 +8,7 @@
  * 
  * Copyright (c) 2025 by 1orz, All Rights Reserved. 
  */
-import { useEffect, useState, type ChangeEvent, type MouseEvent } from 'react'
+import { useCallback, useEffect, useState, type ChangeEvent, type MouseEvent } from 'react'
 import {
   Box,
   Typography,
@@ -189,7 +189,25 @@ export default function ConfigurationPage() {
   const [smsPushLoading, setSmsPushLoading] = useState(false)
   const [smsPushTesting, setSmsPushTesting] = useState(false)
 
-  const loadData = async () => {
+  const checkHealth = useCallback(async () => {
+    setHealthLoading(true)
+    try {
+      const response = await api.health()
+      setHealthStatus({
+        status: response.status,
+        timestamp: new Date().toISOString(),
+      })
+    } catch {
+      setHealthStatus({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+      })
+    } finally {
+      setHealthLoading(false)
+    }
+  }, [])
+
+  const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     
@@ -218,26 +236,7 @@ export default function ConfigurationPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  // 健康检查
-  const checkHealth = async () => {
-    setHealthLoading(true)
-    try {
-      const response = await api.health()
-      setHealthStatus({
-        status: response.status,
-        timestamp: new Date().toISOString(),
-      })
-    } catch {
-      setHealthStatus({
-        status: 'error',
-        timestamp: new Date().toISOString(),
-      })
-    } finally {
-      setHealthLoading(false)
-    }
-  }
+  }, [checkHealth])
 
   useEffect(() => {
     void loadData()
@@ -246,8 +245,7 @@ export default function ConfigurationPage() {
       void checkHealth()
     }, 30000)
     return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [checkHealth, loadData])
 
   const handleAccordionChange = (panel: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
     setExpanded(isExpanded ? panel : false)
