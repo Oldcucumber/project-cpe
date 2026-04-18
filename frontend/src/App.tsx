@@ -23,6 +23,7 @@ const Network = lazy(() => import('./pages/Network'))
 const Phone = lazy(() => import('./pages/Phone'))
 const SMS = lazy(() => import('./pages/SMS'))
 const Configuration = lazy(() => import('./pages/Configuration'))
+const InitScript = lazy(() => import('./pages/InitScript'))
 const ATConsole = lazy(() => import('./pages/ATConsole'))
 const Terminal = lazy(() => import('./pages/Terminal'))
 const OtaUpdate = lazy(() => import('./pages/OtaUpdate'))
@@ -52,6 +53,7 @@ function App() {
               <Route path="phone" element={<Suspense fallback={<PageLoading />}><Phone /></Suspense>} />
               <Route path="sms" element={<Suspense fallback={<PageLoading />}><SMS /></Suspense>} />
               <Route path="config" element={<Suspense fallback={<PageLoading />}><Configuration /></Suspense>} />
+              <Route path="init-script" element={<Suspense fallback={<PageLoading />}><InitScript /></Suspense>} />
               <Route path="ota" element={<Suspense fallback={<PageLoading />}><OtaUpdate /></Suspense>} />
               <Route path="at-console" element={<Suspense fallback={<PageLoading />}><ATConsole /></Suspense>} />
               <Route path="terminal" element={<Suspense fallback={<PageLoading />}><Terminal /></Suspense>} />

@@ -624,6 +624,19 @@ export interface CallHistoryResponse {
   stats: CallStats
 }
 
+// ============ init.sh 管理类型 ============
+
+export interface InitScriptResponse {
+  script: string
+  init_path: string
+  loader_path: string
+  loader_hooked: boolean
+}
+
+export interface SetInitScriptRequest {
+  script: string
+}
+
 // ============ Webhook 配置类型 ============
 
 // Webhook 配置

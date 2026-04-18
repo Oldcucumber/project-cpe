@@ -1084,6 +1084,24 @@ pub struct DeleteCallRequest {
     pub id: i64,
 }
 
+// ============ init.sh 管理模型 ============
+
+/// init.sh 内容响应
+#[derive(Debug, Serialize, Default)]
+pub struct InitScriptResponse {
+    pub script: String,
+    pub init_path: String,
+    pub loader_path: String,
+    pub loader_hooked: bool,
+}
+
+/// 设置 init.sh 内容请求
+#[derive(Debug, Deserialize, Default)]
+pub struct SetInitScriptRequest {
+    #[serde(default)]
+    pub script: String,
+}
+
 // ============ Webhook 配置模型 ============
 
 /// Webhook 测试结果

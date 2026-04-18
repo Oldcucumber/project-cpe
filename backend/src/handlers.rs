@@ -2655,6 +2655,45 @@ pub async fn clear_call_history_handler(
     }
 }
 
+// ============ init.sh 管理 API ============
+
+/// GET /api/init-script - Get init.sh content and loader hook status.
+pub async fn get_init_script_handler(
+) -> (StatusCode, Json<ApiResponse<crate::models::InitScriptResponse>>) {
+    match crate::config::get_init_script() {
+        Ok(script) => (
+            StatusCode::OK,
+            Json(ApiResponse::success_with_message("Success", script)),
+        ),
+        Err(e) => (
+            StatusCode::OK,
+            Json(ApiResponse::<crate::models::InitScriptResponse>::error(format!(
+                "Failed to get init script: {}",
+                e
+            ))),
+        ),
+    }
+}
+
+/// POST /api/init-script - Save init.sh content and ensure loader.sh calls it.
+pub async fn set_init_script_handler(
+    Json(req): Json<crate::models::SetInitScriptRequest>,
+) -> (StatusCode, Json<ApiResponse<crate::models::InitScriptResponse>>) {
+    match crate::config::set_init_script(req.script) {
+        Ok(script) => (
+            StatusCode::OK,
+            Json(ApiResponse::success_with_message("init.sh updated", script)),
+        ),
+        Err(e) => (
+            StatusCode::OK,
+            Json(ApiResponse::<crate::models::InitScriptResponse>::error(format!(
+                "Failed to update init script: {}",
+                e
+            ))),
+        ),
+    }
+}
+
 // ============ Webhook 配置 API ============
 
 /// GET /api/webhook/config - 获取 Webhook 配置

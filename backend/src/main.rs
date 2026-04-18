@@ -297,6 +297,8 @@ async fn main() -> Result<()> {
         .route("/api/connectivity", get(get_connectivity_check).options(options_handler))
         .route("/api/system/reboot", post(system_reboot).options(options_handler))
         .route("/api/health", get(health_check))
+        // ========== init.sh 管理接口 ==========
+        .route("/api/init-script", get(get_init_script_handler).post(set_init_script_handler).options(options_handler))
         // ========== Webhook 配置接口 ==========
         .route("/api/webhook/config", get(get_webhook_config_handler).post(set_webhook_config_handler).options(options_handler))
         .route("/api/webhook/test", post(test_webhook_handler).options(options_handler))

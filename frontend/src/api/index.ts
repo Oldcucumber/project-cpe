@@ -65,6 +65,8 @@ import type {
   SetApnRequest,
   ConnectivityCheckResponse,
   CallHistoryResponse,
+  InitScriptResponse,
+  SetInitScriptRequest,
   WebhookConfig,
   WebhookTestResponse,
   OtaStatusResponse,
@@ -540,6 +542,22 @@ class UDX710API {
   async testWebhook() {
     return request<ApiResponse<WebhookTestResponse>>('/webhook/test', {
       method: 'POST',
+    })
+  }
+
+  // ========== init.sh 管理 ==========
+
+  // 获取 init.sh 内容和 loader.sh 挂载状态
+  async getInitScript() {
+    return request<ApiResponse<InitScriptResponse>>('/init-script')
+  }
+
+  // 保存 init.sh 内容，并确保 loader.sh 调用它
+  async setInitScript(script: string) {
+    const body: SetInitScriptRequest = { script }
+    return request<ApiResponse<InitScriptResponse>>('/init-script', {
+      method: 'POST',
+      body: JSON.stringify(body),
     })
   }
 
