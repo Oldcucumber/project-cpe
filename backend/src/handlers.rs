@@ -2594,6 +2594,7 @@ fn parse_ping_latency(output: &str) -> Option<f64> {
 // ============ 通话记录 API ============
 
 use crate::config::ConfigManager;
+use crate::sms_push::SmsPushSender;
 use crate::webhook::WebhookSender;
 
 /// GET /api/call/history - 获取通话记录
@@ -2743,6 +2744,62 @@ pub async fn test_webhook_handler(
             StatusCode::OK,
             Json(ApiResponse::success_with_message(
                 "Webhook test failed",
+                crate::models::WebhookTestResponse {
+                    success: false,
+                    message: e,
+                },
+            )),
+        ),
+    }
+}
+
+/// GET /api/sms-push/config - 获取短信推送配置
+pub async fn get_sms_push_config_handler(
+    State(config_manager): State<Arc<ConfigManager>>,
+) -> (StatusCode, Json<ApiResponse<crate::config::SmsPushConfig>>) {
+    let config = config_manager.get_sms_push();
+    (
+        StatusCode::OK,
+        Json(ApiResponse::success_with_message("Success", config)),
+    )
+}
+
+/// POST /api/sms-push/config - 设置短信推送配置
+pub async fn set_sms_push_config_handler(
+    State(config_manager): State<Arc<ConfigManager>>,
+    Json(sms_push_config): Json<crate::config::SmsPushConfig>,
+) -> (StatusCode, Json<ApiResponse<serde_json::Value>>) {
+    match config_manager.set_sms_push(sms_push_config) {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::success_with_message("SMS push config updated", json!({}))),
+        ),
+        Err(e) => (
+            StatusCode::OK,
+            Json(ApiResponse::error(format!("Failed to update SMS push config: {}", e))),
+        ),
+    }
+}
+
+/// POST /api/sms-push/test - 测试短信推送连接
+pub async fn test_sms_push_handler(
+    State(sms_push_sender): State<Arc<SmsPushSender>>,
+) -> (StatusCode, Json<ApiResponse<crate::models::WebhookTestResponse>>) {
+    match sms_push_sender.test_sms_push().await {
+        Ok(message) => (
+            StatusCode::OK,
+            Json(ApiResponse::success_with_message(
+                "SMS push test successful",
+                crate::models::WebhookTestResponse {
+                    success: true,
+                    message,
+                },
+            )),
+        ),
+        Err(e) => (
+            StatusCode::OK,
+            Json(ApiResponse::success_with_message(
+                "SMS push test failed",
                 crate::models::WebhookTestResponse {
                     success: false,
                     message: e,

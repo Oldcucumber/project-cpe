@@ -179,11 +179,70 @@ impl Default for WebhookConfig {
     }
 }
 
+/// 短信推送服务提供商
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SmsPushProvider {
+    Pushplus,
+    Serverchan,
+    Pushdeer,
+    Bark,
+    Ntfy,
+}
+
+impl Default for SmsPushProvider {
+    fn default() -> Self {
+        Self::Pushplus
+    }
+}
+
+/// 短信推送配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmsPushConfig {
+    pub enabled: bool,
+    #[serde(default)]
+    pub provider: SmsPushProvider,
+    #[serde(default)]
+    pub credential: String,
+    #[serde(default)]
+    pub server_url: String,
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default = "default_sms_push_title_template")]
+    pub title_template: String,
+    #[serde(default = "default_sms_push_body_template")]
+    pub body_template: String,
+}
+
+fn default_sms_push_title_template() -> String {
+    "短信通知 · {{phone_number}}".to_string()
+}
+
+fn default_sms_push_body_template() -> String {
+    "时间: {{timestamp}}\n号码: {{phone_number}}\n状态: {{status}}\n\n{{content}}".to_string()
+}
+
+impl Default for SmsPushConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: SmsPushProvider::Pushplus,
+            credential: String::new(),
+            server_url: String::new(),
+            topic: String::new(),
+            title_template: default_sms_push_title_template(),
+            body_template: default_sms_push_body_template(),
+        }
+    }
+}
+
 /// 应用配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
     pub webhook: WebhookConfig,
+    #[serde(default)]
+    pub sms_push: SmsPushConfig,
     // 未来可以添加更多配置项
 }
 
@@ -246,6 +305,20 @@ impl ConfigManager {
         {
             let mut config = self.config.write().unwrap();
             config.webhook = webhook;
+        }
+        self.save()
+    }
+
+    /// 获取短信推送配置
+    pub fn get_sms_push(&self) -> SmsPushConfig {
+        self.config.read().unwrap().sms_push.clone()
+    }
+
+    /// 更新短信推送配置
+    pub fn set_sms_push(&self, sms_push: SmsPushConfig) -> Result<(), String> {
+        {
+            let mut config = self.config.write().unwrap();
+            config.sms_push = sms_push;
         }
         self.save()
     }

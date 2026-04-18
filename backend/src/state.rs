@@ -18,6 +18,7 @@ use zbus::Connection;
 
 use crate::config::ConfigManager;
 use crate::db::Database;
+use crate::sms_push::SmsPushSender;
 use crate::webhook::WebhookSender;
 
 /// 应用全局状态
@@ -33,6 +34,8 @@ pub struct AppState {
     pub config_manager: Arc<ConfigManager>,
     /// Webhook 发送器（用于转发 SMS 和通话通知）
     pub webhook_sender: Arc<WebhookSender>,
+    /// 短信推送发送器（用于将短信转发到轻量推送服务）
+    pub sms_push_sender: Arc<SmsPushSender>,
 }
 
 impl AppState {
@@ -42,12 +45,14 @@ impl AppState {
         database: Arc<Database>,
         config_manager: Arc<ConfigManager>,
         webhook_sender: Arc<WebhookSender>,
+        sms_push_sender: Arc<SmsPushSender>,
     ) -> Self {
         Self {
             dbus_conn,
             database,
             config_manager,
             webhook_sender,
+            sms_push_sender,
         }
     }
 }
@@ -76,6 +81,12 @@ impl FromRef<AppState> for Arc<ConfigManager> {
 impl FromRef<AppState> for Arc<WebhookSender> {
     fn from_ref(state: &AppState) -> Self {
         state.webhook_sender.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<SmsPushSender> {
+    fn from_ref(state: &AppState) -> Self {
+        state.sms_push_sender.clone()
     }
 }
 

@@ -69,6 +69,7 @@ import type {
   SetInitScriptRequest,
   WebhookConfig,
   WebhookTestResponse,
+  SmsPushConfig,
   OtaStatusResponse,
   OtaUploadResponse,
 } from './types'
@@ -541,6 +542,28 @@ class UDX710API {
   // 测试 Webhook 连接
   async testWebhook() {
     return request<ApiResponse<WebhookTestResponse>>('/webhook/test', {
+      method: 'POST',
+    })
+  }
+
+  // ========== 短信推送配置功能 ==========
+
+  // 获取短信推送配置
+  async getSmsPushConfig() {
+    return request<ApiResponse<SmsPushConfig>>('/sms-push/config')
+  }
+
+  // 设置短信推送配置
+  async setSmsPushConfig(config: SmsPushConfig) {
+    return request<ApiResponse<Record<string, unknown>>>('/sms-push/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    })
+  }
+
+  // 测试短信推送连接
+  async testSmsPush() {
+    return request<ApiResponse<WebhookTestResponse>>('/sms-push/test', {
       method: 'POST',
     })
   }

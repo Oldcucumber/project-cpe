@@ -673,6 +673,28 @@ export interface WebhookTestResponse {
   message: string
 }
 
+// ============ 短信推送配置类型 ============
+
+export type SmsPushProvider = 'pushplus' | 'serverchan' | 'pushdeer' | 'bark' | 'ntfy'
+
+export interface SmsPushConfig {
+  enabled: boolean
+  provider: SmsPushProvider
+  credential: string
+  server_url: string
+  topic: string
+  title_template: string
+  body_template: string
+}
+
+export const DEFAULT_SMS_PUSH_TITLE_TEMPLATE = '短信通知 · {{phone_number}}'
+
+export const DEFAULT_SMS_PUSH_BODY_TEMPLATE = `时间: {{timestamp}}
+号码: {{phone_number}}
+状态: {{status}}
+
+{{content}}`
+
 // ========== OTA 更新类型 ==========
 
 // OTA 元数据

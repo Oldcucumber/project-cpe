@@ -44,6 +44,7 @@ mod iptables;
 mod models;
 mod ota;
 mod serial;
+mod sms_push;
 mod sms_listener;
 mod state;
 mod usb_switch;
@@ -54,6 +55,7 @@ use config::{ensure_loader_hooks_init, ConfigManager, get_default_config_path};
 use dbus::init_data_connection;
 use handlers::*;
 use db::Database;
+use sms_push::SmsPushSender;
 use state::AppState;
 use webhook::WebhookSender;
 
@@ -178,14 +180,16 @@ async fn main() -> Result<()> {
     
     // 初始化 Webhook 发送器
     let webhook_sender = Arc::new(WebhookSender::new(Arc::clone(&config_manager)));
+    let sms_push_sender = Arc::new(SmsPushSender::new(Arc::clone(&config_manager)));
     
     // 启动 SMS 监听线程
     {
         let conn_clone = Connection::system().await?;
         let db_clone = Arc::clone(&app_db);
         let webhook_clone = Arc::clone(&webhook_sender);
+        let sms_push_clone = Arc::clone(&sms_push_sender);
         tokio::spawn(async move {
-            let _ = sms_listener::start_sms_listener(conn_clone, db_clone, webhook_clone).await;
+            let _ = sms_listener::start_sms_listener(conn_clone, db_clone, webhook_clone, sms_push_clone).await;
         });
     }
     
@@ -233,6 +237,7 @@ async fn main() -> Result<()> {
         app_db,
         config_manager,
         webhook_sender,
+        sms_push_sender,
     );
 
     {
@@ -317,6 +322,9 @@ async fn main() -> Result<()> {
         // ========== Webhook 配置接口 ==========
         .route("/api/webhook/config", get(get_webhook_config_handler).post(set_webhook_config_handler).options(options_handler))
         .route("/api/webhook/test", post(test_webhook_handler).options(options_handler))
+        // ========== 短信推送配置接口 ==========
+        .route("/api/sms-push/config", get(get_sms_push_config_handler).post(set_sms_push_config_handler).options(options_handler))
+        .route("/api/sms-push/test", post(test_sms_push_handler).options(options_handler))
         // ========== OTA 更新接口 ==========
         .route("/api/ota/status", get(get_ota_status_handler).options(options_handler))
         .route("/api/ota/upload", post(upload_ota_handler).options(options_handler)

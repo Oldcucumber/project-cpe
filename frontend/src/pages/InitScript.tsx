@@ -33,7 +33,6 @@ import {
 import { api } from '../api'
 import ErrorSnackbar from '../components/ErrorSnackbar'
 
-const FORMAT_CHECK_REMEMBER_KEY = 'init-script-format-check-remember'
 const FORMAT_CHECK_ENABLED_KEY = 'init-script-format-check-enabled'
 
 interface ScriptNotice {
@@ -266,14 +265,8 @@ export default function InitScriptPage() {
   const [initPath, setInitPath] = useState('/home/root/init.sh')
   const [loaderPath, setLoaderPath] = useState('/home/root/loader.sh')
   const [loaderHooked, setLoaderHooked] = useState(false)
-  const [rememberFormatCheck, setRememberFormatCheck] = useState(() => {
-    return readStoredBoolean(FORMAT_CHECK_REMEMBER_KEY) ?? false
-  })
   const [formatCheckEnabled, setFormatCheckEnabled] = useState(() => {
-    if (readStoredBoolean(FORMAT_CHECK_REMEMBER_KEY)) {
-      return readStoredBoolean(FORMAT_CHECK_ENABLED_KEY) ?? true
-    }
-    return true
+    return readStoredBoolean(FORMAT_CHECK_ENABLED_KEY) ?? true
   })
 
   const formatNotices = formatCheckEnabled ? analyzeScriptFormat(script) : []
@@ -309,15 +302,8 @@ export default function InitScriptPage() {
       return
     }
 
-    if (rememberFormatCheck) {
-      localStorage.setItem(FORMAT_CHECK_REMEMBER_KEY, 'true')
-      localStorage.setItem(FORMAT_CHECK_ENABLED_KEY, formatCheckEnabled ? 'true' : 'false')
-      return
-    }
-
-    localStorage.removeItem(FORMAT_CHECK_REMEMBER_KEY)
-    localStorage.removeItem(FORMAT_CHECK_ENABLED_KEY)
-  }, [formatCheckEnabled, rememberFormatCheck])
+    localStorage.setItem(FORMAT_CHECK_ENABLED_KEY, formatCheckEnabled ? 'true' : 'false')
+  }, [formatCheckEnabled])
 
   const handleSave = async () => {
     setSaving(true)
@@ -388,112 +374,30 @@ export default function InitScriptPage() {
               gap={2}
               mb={2}
             >
-              <Box display="flex" alignItems="center" gap={1}>
-                <RocketLaunch color="primary" />
-                <Typography variant="h6">启动状态</Typography>
+              <Box>
+                <Typography variant="h6">脚本编辑</Typography>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" mt={1}>
+                  <Chip
+                    label={loaderHooked ? 'loader.sh 已挂载 init.sh' : 'loader.sh 尚未挂载 init.sh'}
+                    color={loaderHooked ? 'success' : 'warning'}
+                    size="small"
+                  />
+                  <Chip
+                    label={
+                      formatCheckEnabled
+                        ? `格式检查 ${formatNotices.length === 0 ? '通过' : `${formatNotices.length} 条提醒`}`
+                        : '格式检查已关闭'
+                    }
+                    color={!formatCheckEnabled ? 'default' : formatNotices.length === 0 ? 'success' : 'warning'}
+                    size="small"
+                  />
+                  <Chip
+                    label={sensitiveMatches.length > 0 ? `敏感命令 ${sensitiveMatches.length} 处` : '未发现敏感命令'}
+                    color={sensitiveMatches.length > 0 ? 'warning' : 'success'}
+                    size="small"
+                  />
+                </Stack>
               </Box>
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                <Chip
-                  label={loaderHooked ? 'loader.sh 已挂载 init.sh' : 'loader.sh 尚未挂载 init.sh'}
-                  color={loaderHooked ? 'success' : 'warning'}
-                  size="small"
-                />
-                <Chip
-                  label={
-                    formatCheckEnabled
-                      ? `格式检查 ${formatNotices.length === 0 ? '通过' : `${formatNotices.length} 条提醒`}`
-                      : '格式检查已关闭'
-                  }
-                  color={!formatCheckEnabled ? 'default' : formatNotices.length === 0 ? 'success' : 'warning'}
-                  size="small"
-                />
-                <Chip
-                  label={sensitiveMatches.length > 0 ? `敏感命令 ${sensitiveMatches.length} 处` : '未发现敏感命令'}
-                  color={sensitiveMatches.length > 0 ? 'warning' : 'success'}
-                  size="small"
-                />
-              </Stack>
-            </Box>
-
-            <TableContainer>
-              <Table size="small">
-                <TableBody>
-                  <TableRow>
-                    <TableCell sx={{ width: 180 }}>loader.sh 路径</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>{loaderPath}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>init.sh 路径</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>{initPath}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>固定启动命令</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>sh /home/root/init.sh &amp;</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent>
-            <Box display="flex" alignItems="center" gap={1} mb={2}>
-              <FactCheck color="primary" />
-              <Typography variant="h6">检查选项</Typography>
-            </Box>
-
-            <Stack spacing={1}>
-              <FormControlLabel
-                control={(
-                  <Switch
-                    checked={formatCheckEnabled}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setFormatCheckEnabled(event.target.checked)}
-                  />
-                )}
-                label="启用简单格式检查"
-              />
-              <FormControlLabel
-                control={(
-                  <Switch
-                    checked={rememberFormatCheck}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setRememberFormatCheck(event.target.checked)}
-                  />
-                )}
-                label="记住当前格式检查开关"
-              />
-            </Stack>
-
-            <Box mt={1}>
-              <Typography variant="body2" color="text.secondary">
-                默认开启格式检查。关闭后仍然会显示敏感命令标记，但不会再给出格式提醒。
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-
-        <Alert severity="info">
-          <AlertTitle>执行方式</AlertTitle>
-          页面只编辑 <code>init.sh</code> 文件，不会覆盖 <code>loader.sh</code> 原有启动逻辑。
-          如果脚本留空，设备仍会保留启动入口，只是不额外执行其他命令。
-        </Alert>
-
-        <Alert severity="warning">
-          <AlertTitle>注意</AlertTitle>
-          敏感命令只会标红提示，不会被禁止保存。请确认命令对网络、USB、存储和系统启动流程的影响。
-        </Alert>
-
-        <Card>
-          <CardContent>
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems={{ xs: 'flex-start', md: 'center' }}
-              flexDirection={{ xs: 'column', md: 'row' }}
-              gap={2}
-              mb={2}
-            >
-              <Typography variant="h6">脚本编辑</Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <Button
                   variant="contained"
@@ -522,6 +426,14 @@ export default function InitScriptPage() {
               </Stack>
             </Box>
 
+            <Typography variant="body2" color="text.secondary" mb={2}>
+              这里只编辑 <code>init.sh</code> 内容。保存时会确保 <code>loader.sh</code> 末尾保留
+              {' '}
+              <code>sh /home/root/init.sh &amp;</code>
+              {' '}
+              作为固定启动入口，格式检查开关会自动记住当前选择。
+            </Typography>
+
             <TextField
               fullWidth
               multiline
@@ -540,6 +452,85 @@ export default function InitScriptPage() {
             />
           </CardContent>
         </Card>
+
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.05fr) minmax(320px, 0.95fr)' },
+            gap: 3,
+          }}
+        >
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={1} mb={2}>
+                <FactCheck color="primary" />
+                <Typography variant="h6">检查选项</Typography>
+              </Box>
+
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={formatCheckEnabled}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setFormatCheckEnabled(event.target.checked)}
+                  />
+                )}
+                label="启用简单格式检查"
+              />
+
+              <Typography variant="body2" color="text.secondary" mt={1}>
+                默认开启，并自动记住当前开关状态。关闭后仍会保留敏感命令标记，但不再给出格式提醒。
+              </Typography>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems={{ xs: 'flex-start', sm: 'center' }}
+                flexDirection={{ xs: 'column', sm: 'row' }}
+                gap={1.5}
+                mb={2}
+              >
+                <Box display="flex" alignItems="center" gap={1}>
+                  <RocketLaunch color="primary" />
+                  <Typography variant="h6">启动入口</Typography>
+                </Box>
+                <Chip
+                  label={loaderHooked ? 'loader.sh 已挂载 init.sh' : 'loader.sh 尚未挂载 init.sh'}
+                  color={loaderHooked ? 'success' : 'warning'}
+                  size="small"
+                />
+              </Box>
+
+              <TableContainer>
+                <Table size="small">
+                  <TableBody>
+                    <TableRow>
+                      <TableCell sx={{ width: 160 }}>loader.sh 路径</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{loaderPath}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>init.sh 路径</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{initPath}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>固定启动命令</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>sh /home/root/init.sh &amp;</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Alert severity={sensitiveMatches.length > 0 ? 'warning' : 'info'}>
+          <AlertTitle>说明</AlertTitle>
+          页面只维护 <code>init.sh</code> 文件，不会覆盖 <code>loader.sh</code> 原有启动逻辑。
+          如果脚本留空，设备仍会保留启动入口。敏感命令只做标记提醒，不会阻止保存。
+        </Alert>
 
         <Card>
           <CardContent>
