@@ -51,43 +51,5 @@ export default defineConfig({
   build: {
     // outDir: '../www',
     // emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        // Split heavy dependencies by role to keep the initial chunk smaller.
-        manualChunks(id) {
-          if (!id.includes('node_modules')) {
-            return undefined
-          }
-
-          if (id.includes('@mui/x-charts') || id.includes('@mui/x-data-grid')) {
-            return 'vendor-mui-x'
-          }
-
-          if (id.includes('@mui/icons-material')) {
-            return 'vendor-icons'
-          }
-
-          if (id.includes('@mui/material') || id.includes('@emotion/')) {
-            return 'vendor-mui'
-          }
-
-          if (id.includes('@tanstack/react-query')) {
-            return 'vendor-query'
-          }
-
-          if (
-            id.includes('react-router-dom')
-            || id.includes('\\react\\')
-            || id.includes('/react/')
-            || id.includes('\\react-dom\\')
-            || id.includes('/react-dom/')
-          ) {
-            return 'vendor-react'
-          }
-
-          return undefined
-        },
-      },
-    },
   },
 })
