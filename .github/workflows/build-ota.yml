@@ -49,13 +49,6 @@ jobs:
           sudo apt-get install -y upx-ucl
           upx --version
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend -> target
-          cache-targets: true
-          cache-all-crates: true
-
       - name: Validate version numbers
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -75,6 +68,13 @@ jobs:
             echo "frontend/package.json version does not match VERSION"
             exit 1
           fi
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+          cache-targets: true
+          cache-all-crates: true
 
       - name: Build backend (aarch64-unknown-linux-musl)
         working-directory: backend
@@ -110,17 +110,17 @@ jobs:
           echo "压缩完成，节省 ${RATIO}%"
           ls -lh "$BINARY_PATH"
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Build frontend
         working-directory: frontend
