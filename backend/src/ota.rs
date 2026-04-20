@@ -568,16 +568,6 @@ pub fn confirm_boot_if_pending() -> Result<bool, String> {
         return Ok(true);
     }
 
-    if Some(current_slot) == state.fallback_slot {
-        state.active_slot = current_slot;
-        state.boot_state = OtaBootState::Stable;
-        state.fallback_slot = None;
-        state.trial_attempts = 0;
-        write_runtime_state(&state)?;
-        cleanup_inactive_slot_artifacts(current_slot);
-        return Ok(true);
-    }
-
     Ok(false)
 }
 

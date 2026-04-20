@@ -65,22 +65,55 @@ cleanup_slot_dir() {
     fi
 }
 
-select_backend() {
-    case "$ACTIVE_SLOT" in
-        slot-a|slot-b)
-            if [ -x "$OTA_SLOT_ROOT/$ACTIVE_SLOT/udx710" ]; then
-                echo "$OTA_SLOT_ROOT/$ACTIVE_SLOT/udx710"
-                return 0
-            fi
+slot_binary_path() {
+    case "$1" in
+        "$OTA_SLOT_A")
+            echo "$OTA_SLOT_ROOT/$OTA_SLOT_A/udx710"
+            ;;
+        "$OTA_SLOT_B")
+            echo "$OTA_SLOT_ROOT/$OTA_SLOT_B/udx710"
+            ;;
+        legacy)
+            echo "$OTA_LEGACY_BINARY"
+            ;;
+        *)
+            return 1
             ;;
     esac
+}
 
-    if [ -x "$OTA_LEGACY_BINARY" ]; then
-        echo "$OTA_LEGACY_BINARY"
+slot_exists() {
+    slot_path="$(slot_binary_path "$1" 2>/dev/null)" || return 1
+    [ -x "$slot_path" ]
+}
+
+repair_missing_active_slot() {
+    if slot_exists "$ACTIVE_SLOT"; then
         return 0
     fi
 
-    return 1
+    if [ -n "$FALLBACK_SLOT" ] && slot_exists "$FALLBACK_SLOT"; then
+        ACTIVE_SLOT="$FALLBACK_SLOT"
+    elif slot_exists "$OTA_SLOT_A"; then
+        ACTIVE_SLOT="$OTA_SLOT_A"
+    elif slot_exists "$OTA_SLOT_B"; then
+        ACTIVE_SLOT="$OTA_SLOT_B"
+    elif slot_exists legacy; then
+        ACTIVE_SLOT=legacy
+    else
+        return 1
+    fi
+
+    BOOT_STATE=stable
+    PENDING_SLOT=""
+    FALLBACK_SLOT=""
+    TRIAL_ATTEMPTS=0
+    write_ota_state
+    return 0
+}
+
+select_backend() {
+    slot_binary_path "$ACTIVE_SLOT"
 }
 
 resolve_backend_slot() {
@@ -118,6 +151,8 @@ if [ "$BOOT_STATE" = "trial" ]; then
         cleanup_slot_dir "$failed_slot"
     fi
 fi
+
+repair_missing_active_slot || exit 1
 
 export UDX710_OTA_STATE_FILE="$OTA_STATE_FILE"
 export UDX710_FALLBACK_SLOT="$FALLBACK_SLOT"
@@ -573,10 +608,15 @@ fn loader_is_plain_legacy_bootstrap(content: &str) -> bool {
         .all(|line| *line == INIT_SCRIPT_LOADER_COMMAND)
 }
 
+fn ota_script_needs_update(content: &str) -> bool {
+    content.contains("UDX710 OTA bootstrap")
+        && !content.contains("repair_missing_active_slot()")
+}
+
 fn ensure_ota_script() -> Result<(), String> {
     let ota_path = PathBuf::from(OTA_SCRIPT_PATH);
     let should_write_default = match fs::read_to_string(&ota_path) {
-        Ok(content) => content.trim().is_empty(),
+        Ok(content) => content.trim().is_empty() || ota_script_needs_update(&content),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
         Err(e) => return Err(format!("Failed to read ota.sh: {}", e)),
     };
