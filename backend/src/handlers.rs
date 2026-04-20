@@ -638,6 +638,7 @@ fn get_mode_name(mode: Option<u8>) -> String {
         Some(1) => "CDC-NCM".to_string(),
         Some(2) => "CDC-ECM".to_string(),
         Some(3) => "RNDIS".to_string(),
+        Some(4) => "CDC-NCM (纯净)".to_string(),
         _ => "Unknown".to_string(),
     }
 }
@@ -712,6 +713,14 @@ pub async fn get_usb_mode() -> impl IntoResponse {
 /// ```
 pub async fn set_usb_mode(Json(payload): Json<SetUsbModeRequest>) -> impl IntoResponse {
     // 验证模式值
+    if payload.mode == 4 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::error(
+                "Mode 4 (CDC-NCM pure) only supports immediate hot switching and cannot be saved as boot config",
+            )),
+        );
+    }
     if !(1..=3).contains(&payload.mode) {
         return (
             StatusCode::BAD_REQUEST,
@@ -764,11 +773,11 @@ pub async fn set_usb_mode(Json(payload): Json<SetUsbModeRequest>) -> impl IntoRe
 /// - 建议使用模式 1 (NCM) 以获得最佳跨平台兼容性
 pub async fn set_usb_mode_advanced(Json(payload): Json<SetUsbModeRequest>) -> impl IntoResponse {
     // 验证模式值
-    if !(1..=3).contains(&payload.mode) {
+    if !(1..=4).contains(&payload.mode) {
         return (
             StatusCode::BAD_REQUEST,
             Json(ApiResponse::<()>::error(
-                "Invalid mode: must be 1 (CDC-NCM), 2 (CDC-ECM), or 3 (RNDIS)",
+                "Invalid mode: must be 1 (CDC-NCM), 2 (CDC-ECM), 3 (RNDIS), or 4 (CDC-NCM pure)",
             )),
         );
     }

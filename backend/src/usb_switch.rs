@@ -48,6 +48,7 @@ pub struct UsbModeConfig {
     pub pamu3_protocol: Option<&'static str>,
     pub functions: &'static str,
     pub bcd_device: &'static str,
+    pub debug_interfaces: bool,
     /// 是否需要启用 USB 共享（RNDIS 需要）
     pub usb_share_enable: bool,
 }
@@ -69,6 +70,7 @@ impl UsbModeConfig {
                 pamu3_protocol: Some("NCM"),
                 functions: "ncm.gs0",
                 bcd_device: "0x0404",
+                debug_interfaces: true,
                 usb_share_enable: false,
             }),
             // ECM 模式
@@ -79,6 +81,7 @@ impl UsbModeConfig {
                 pamu3_protocol: None, // ECM 不需要设置 pamu3_protocol
                 functions: "ecm.gs0",
                 bcd_device: "0x0404",
+                debug_interfaces: true,
                 usb_share_enable: false,
             }),
             // RNDIS 模式
@@ -88,8 +91,19 @@ impl UsbModeConfig {
                 configuration: "rndis",
                 pamu3_protocol: Some("RNDIS"),
                 functions: "rndis.gs4",
+                debug_interfaces: true,
                 bcd_device: "0x0404",
                 usb_share_enable: true, // RNDIS 需要启用 USB 共享
+            }),
+            4 => Some(Self {
+                vid: "0x3426",
+                pid: "0x2999",
+                configuration: "ncm",
+                pamu3_protocol: Some("NCM"),
+                functions: "ncm.gs0",
+                bcd_device: "0x0404",
+                debug_interfaces: false,
+                usb_share_enable: false,
             }),
             _ => None,
         }
@@ -495,8 +509,10 @@ pub fn switch_usb_mode_advanced(mode: u8) -> Result<(), String> {
     }
     
     // 12. 创建 gser/vser 功能
-    create_gser_functions()
-        .map_err(|e| format!("Failed to create gser functions: {}", e))?;
+    if config.debug_interfaces {
+        create_gser_functions()
+            .map_err(|e| format!("Failed to create gser functions: {}", e))?;
+    }
     
     // 13. 设置 MAC 地址
     let dev_addr_path = format!("{}/dev_addr", function_path);
@@ -516,7 +532,8 @@ pub fn switch_usb_mode_advanced(mode: u8) -> Result<(), String> {
     }
     
     // 14. 创建符号链接（始终使用多功能模式，包含 ADB 和调试接口）
-    create_multi_function_links(&config)?;
+    if config.debug_interfaces {
+        create_multi_function_links(&config)?;
     
     // 15. 启动 adbd（始终启动）
     // adbd-init 会挂载 functionfs 到 /dev/usb-ffs/adb
@@ -527,7 +544,11 @@ pub fn switch_usb_mode_advanced(mode: u8) -> Result<(), String> {
     wait_for_functionfs_mount()?;
     
     // 17. 设置日志传输
-    let _ = set_log_transport(true);
+        let _ = set_log_transport(true);
+    } else {
+        create_primary_function_link(&config)?;
+        let _ = set_log_transport(false);
+    }
     
     // 18. 启用 UDC
     // 使用之前缓存的 UDC 名称写回，避免读取为空导致挂载失败
@@ -604,6 +625,16 @@ fn create_multi_function_links(config: &UsbModeConfig) -> Result<(), String> {
 
 
 /// 获取 UDC 名称
+fn create_primary_function_link(config: &UsbModeConfig) -> Result<(), String> {
+    std::os::unix::fs::symlink(
+        format!("{}/{}", FUNCTIONS_PATH, config.functions),
+        format!("{}/f1", CONFIG_PATH),
+    )
+    .map_err(|e| format!("Failed to link main function: {}", e))?;
+
+    Ok(())
+}
+
 fn get_udc_name() -> String {
     if let Ok(entries) = fs::read_dir("/sys/class/udc") {
         entries
@@ -754,6 +785,9 @@ const USB_MODE_TEMPORARY_FILE: &str = "/mnt/data/mode_tmp.cfg";
 /// 成功返回 Ok(())，失败返回错误信息
 pub fn set_usb_mode_config(mode: u8, permanent: bool) -> Result<(), String> {
     // 验证模式值
+    if mode == 4 {
+        return Err("Mode 4 only supports immediate hot switching and cannot be written to mode.cfg".to_string());
+    }
     if !(1..=3).contains(&mode) {
         return Err(format!("Invalid USB mode: {}. Valid modes: 1=NCM, 2=ECM, 3=RNDIS", mode));
     }
@@ -786,13 +820,13 @@ pub fn get_usb_mode_config() -> Result<UsbModeConfigResult, String> {
     let permanent_mode = fs::read_to_string(USB_MODE_PERMANENT_FILE)
         .ok()
         .and_then(|s| s.trim().parse::<u8>().ok())
-        .filter(|&m| (1..=3).contains(&m));
+        .filter(|&m| (1..=4).contains(&m));
     
     // 3. 读取临时配置文件
     let temporary_mode = fs::read_to_string(USB_MODE_TEMPORARY_FILE)
         .ok()
         .and_then(|s| s.trim().parse::<u8>().ok())
-        .filter(|&m| (1..=3).contains(&m));
+        .filter(|&m| (1..=4).contains(&m));
     
     Ok(UsbModeConfigResult {
         current_mode: current_hardware_mode,
@@ -823,11 +857,14 @@ pub fn get_current_usb_mode() -> Result<UsbModeResult, String> {
         .map_err(|e| format!("Failed to read VID: {}", e))?
         .trim()
         .to_lowercase();
-    
     let pid = fs::read_to_string(format!("{}/idProduct", GADGET_PATH))
         .map_err(|e| format!("Failed to read PID: {}", e))?
         .trim()
         .to_lowercase();
+
+    if vid == "0x3426" && pid == "0x2999" {
+        return Ok(UsbModeResult { mode: 4 });
+    }
     
     // 根据 VID:PID 判断模式
     match (vid.as_str(), pid.as_str()) {
@@ -850,7 +887,7 @@ pub fn get_current_usb_mode() -> Result<UsbModeResult, String> {
             fs::read_to_string("/mnt/data/mode.cfg")
                 .ok()
                 .and_then(|s| s.trim().parse::<u8>().ok())
-                .filter(|&m| (1..=3).contains(&m))
+                .filter(|&m| (1..=4).contains(&m))
                 .map(|mode| UsbModeResult { mode })
                 .ok_or_else(|| format!("Unknown USB mode (VID={}, PID={})", vid, pid))
         }

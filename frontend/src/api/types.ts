@@ -130,7 +130,7 @@ export interface AtCommandRequest {
 
 // USB 模式设置请求
 export interface SetUsbModeRequest {
-  mode: number // 1=CDC-NCM, 2=CDC-ECM, 3=RNDIS
+  mode: number // 1=CDC-NCM, 2=CDC-ECM, 3=RNDIS, 4=CDC-NCM Pure
   permanent?: boolean // true=永久模式, false=临时模式（默认 false）
 }
 

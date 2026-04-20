@@ -354,6 +354,7 @@ export default function ConfigurationPage() {
       case 1: return 'CDC-NCM'
       case 2: return 'CDC-ECM'
       case 3: return 'RNDIS'
+      case 4: return 'CDC-NCM (纯净)'
       default: return 'Unknown'
     }
   }
@@ -800,12 +801,30 @@ export default function ConfigurationPage() {
                     </Box>
                   }
                 />
+                <FormControlLabel
+                  value={4}
+                  control={<Radio />}
+                  label={
+                    <Box>
+                      <Typography variant="body1">CDC-NCM (纯净 / Windows 测试)</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        仅保留 NCM 网卡功能，不挂载 ADB 和调试串口，更适合排查 Windows 识别问题
+                      </Typography>
+                    </Box>
+                  }
+                />
               </RadioGroup>
             </FormControl>
 
             <Divider sx={{ my: 2 }} />
 
             {/* USB 热切换选项 */}
+            {selectedUsbMode === 4 && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                纯 NCM 模式会关闭 ADB 和调试串口，且当前只支持立即热切换测试，不会写入开机 USB 模式配置。
+              </Alert>
+            )}
+
             <Box sx={{ mb: 2, p: 2, bgcolor: useHotSwitch ? 'warning.light' : 'action.hover', borderRadius: 1 }}>
               <FormControlLabel
                 control={
@@ -831,7 +850,7 @@ export default function ConfigurationPage() {
               />
             </Box>
 
-            {!useHotSwitch && (
+            {!useHotSwitch && selectedUsbMode !== 4 && (
               <FormControl component="fieldset" fullWidth sx={{ mb: 2 }}>
               <FormLabel component="legend">配置模式</FormLabel>
               <RadioGroup
@@ -872,7 +891,7 @@ export default function ConfigurationPage() {
                 fullWidth
                 color={useHotSwitch ? 'warning' : 'primary'}
                 onClick={handleUsbModeApply}
-                disabled={hotSwitching || (selectedUsbMode === usbMode?.current_mode && !useHotSwitch)}
+                disabled={hotSwitching || (selectedUsbMode === usbMode?.current_mode && !useHotSwitch) || (selectedUsbMode === 4 && !useHotSwitch)}
                 startIcon={hotSwitching ? <CircularProgress size={20} /> : (useHotSwitch ? <FlashOn /> : undefined)}
               >
                 {hotSwitching ? '切换中...' : (useHotSwitch ? '立即热切换' : '保存配置')}

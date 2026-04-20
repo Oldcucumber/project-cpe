@@ -254,7 +254,7 @@ pub struct QosInfoResponse {
 }
 
 /// USB模式枚举
-/// 1 = CDC-NCM, 2 = CDC-ECM, 3 = RNDIS
+/// 1 = CDC-NCM, 2 = CDC-ECM, 3 = RNDIS, 4 = CDC-NCM Pure
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -262,6 +262,7 @@ pub enum UsbMode {
     CdcNcm = 1,
     CdcEcm = 2,
     Rndis = 3,
+    CdcNcmPure = 4,
 }
 
 /// 设置USB模式请求
