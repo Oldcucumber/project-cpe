@@ -256,17 +256,6 @@ async fn main() -> Result<()> {
         frontend_runtime,
     );
 
-    {
-        tokio::spawn(async {
-            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
-            match ota::confirm_boot_if_pending() {
-                Ok(true) => info!("OTA boot confirmed and previous slot cleaned"),
-                Ok(false) => {}
-                Err(err) => warn!(error = %err, "Failed to confirm OTA boot"),
-            }
-        });
-    }
-
     // Build routes - 使用统一的 AppState
     let app = Router::new()
         // ========== AT 指令接口 ==========

@@ -22,149 +22,10 @@ use tracing::{info, warn};
 
 const DEFAULT_LOADER_SCRIPT: &str = r#"#!/bin/sh
 /home/root/ttyd/start.sh &
-sh /home/root/ota.sh &
-"#;
-const DEFAULT_OTA_SCRIPT: &str = r#"#!/bin/sh
-# UDX710 OTA bootstrap. Falls back to the legacy root install when no slot state exists.
-OTA_ROOT="/home/root/ota"
-OTA_SLOT_ROOT="$OTA_ROOT/slots"
-OTA_STATE_FILE="$OTA_ROOT/state.env"
-OTA_LEGACY_BINARY="/home/root/udx710"
-OTA_PORT="80"
-OTA_SLOT_A="slot-a"
-OTA_SLOT_B="slot-b"
-
-load_ota_state() {
-    ACTIVE_SLOT="legacy"
-    BOOT_STATE="stable"
-    PENDING_SLOT=""
-    FALLBACK_SLOT=""
-    TRIAL_ATTEMPTS="0"
-
-    if [ -f "$OTA_STATE_FILE" ]; then
-        # shellcheck disable=SC1090
-        . "$OTA_STATE_FILE" 2>/dev/null || true
-    fi
-}
-
-write_ota_state() {
-    mkdir -p "$OTA_ROOT"
-    cat > "$OTA_STATE_FILE" <<EOF
-ACTIVE_SLOT=${ACTIVE_SLOT}
-BOOT_STATE=${BOOT_STATE}
-PENDING_SLOT=${PENDING_SLOT}
-FALLBACK_SLOT=${FALLBACK_SLOT}
-TRIAL_ATTEMPTS=${TRIAL_ATTEMPTS}
-EOF
-}
-
-cleanup_slot_dir() {
-    local slot_name="$1"
-    if [ -n "$slot_name" ] && [ -d "$OTA_SLOT_ROOT/$slot_name" ]; then
-        rm -rf "$OTA_SLOT_ROOT/$slot_name"
-    fi
-}
-
-slot_binary_path() {
-    case "$1" in
-        "$OTA_SLOT_A")
-            echo "$OTA_SLOT_ROOT/$OTA_SLOT_A/udx710"
-            ;;
-        "$OTA_SLOT_B")
-            echo "$OTA_SLOT_ROOT/$OTA_SLOT_B/udx710"
-            ;;
-        legacy)
-            echo "$OTA_LEGACY_BINARY"
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-slot_exists() {
-    slot_path="$(slot_binary_path "$1" 2>/dev/null)" || return 1
-    [ -x "$slot_path" ]
-}
-
-repair_missing_active_slot() {
-    if slot_exists "$ACTIVE_SLOT"; then
-        return 0
-    fi
-
-    if [ -n "$FALLBACK_SLOT" ] && slot_exists "$FALLBACK_SLOT"; then
-        ACTIVE_SLOT="$FALLBACK_SLOT"
-    elif slot_exists "$OTA_SLOT_A"; then
-        ACTIVE_SLOT="$OTA_SLOT_A"
-    elif slot_exists "$OTA_SLOT_B"; then
-        ACTIVE_SLOT="$OTA_SLOT_B"
-    elif slot_exists legacy; then
-        ACTIVE_SLOT=legacy
-    else
-        return 1
-    fi
-
-    BOOT_STATE=stable
-    PENDING_SLOT=""
-    FALLBACK_SLOT=""
-    TRIAL_ATTEMPTS=0
-    write_ota_state
-    return 0
-}
-
-select_backend() {
-    slot_binary_path "$ACTIVE_SLOT"
-}
-
-resolve_backend_slot() {
-    case "$1" in
-        "$OTA_SLOT_ROOT/$OTA_SLOT_A/udx710")
-            echo "$OTA_SLOT_A"
-            ;;
-        "$OTA_SLOT_ROOT/$OTA_SLOT_B/udx710")
-            echo "$OTA_SLOT_B"
-            ;;
-        "$OTA_LEGACY_BINARY")
-            echo "legacy"
-            ;;
-        *)
-            echo "legacy"
-            ;;
-    esac
-}
-
-load_ota_state
-
-if [ "$BOOT_STATE" = "trial" ]; then
-    if [ "${TRIAL_ATTEMPTS:-0}" = "0" ]; then
-        ACTIVE_SLOT="${PENDING_SLOT:-$ACTIVE_SLOT}"
-        TRIAL_ATTEMPTS=1
-        write_ota_state
-    else
-        failed_slot="$PENDING_SLOT"
-        ACTIVE_SLOT="${FALLBACK_SLOT:-legacy}"
-        BOOT_STATE=stable
-        PENDING_SLOT=""
-        FALLBACK_SLOT=""
-        TRIAL_ATTEMPTS=0
-        write_ota_state
-        cleanup_slot_dir "$failed_slot"
-    fi
-fi
-
-repair_missing_active_slot || exit 1
-
-export UDX710_OTA_STATE_FILE="$OTA_STATE_FILE"
-export UDX710_FALLBACK_SLOT="$FALLBACK_SLOT"
-
-backend_bin="$(select_backend)" || exit 1
-export UDX710_ACTIVE_SLOT="$(resolve_backend_slot "$backend_bin")"
-exec "$backend_bin" -p "$OTA_PORT"
+/home/root/udx710 -p 80 &
 "#;
 const LOADER_SCRIPT_PATH: &str = "/home/root/loader.sh";
-const OTA_SCRIPT_PATH: &str = "/home/root/ota.sh";
 const INIT_SCRIPT_PATH: &str = "/home/root/init.sh";
-const OTA_SCRIPT_LOADER_COMMAND: &str = "sh /home/root/ota.sh &";
 const INIT_SCRIPT_LOADER_COMMAND: &str = "sh /home/root/init.sh &";
 
 /// Webhook 配置
@@ -517,10 +378,10 @@ fn is_ota_hook_line(line: &str) -> bool {
         return false;
     }
 
-    trimmed == OTA_SCRIPT_LOADER_COMMAND
-        || trimmed == OTA_SCRIPT_PATH
-        || trimmed == format!("{} &", OTA_SCRIPT_PATH)
-        || trimmed.starts_with(&format!("sh {}", OTA_SCRIPT_PATH))
+    trimmed == "sh /home/root/ota.sh &"
+        || trimmed == "/home/root/ota.sh"
+        || trimmed == "/home/root/ota.sh &"
+        || trimmed.starts_with("sh /home/root/ota.sh")
 }
 
 fn is_init_hook_line(line: &str) -> bool {
@@ -544,20 +405,21 @@ fn loader_contains_init_command(content: &str) -> bool {
     content.lines().any(is_init_hook_line)
 }
 
-fn append_ota_command_to_loader(content: &str) -> String {
-    let normalized = normalize_newlines(content);
+fn remove_ota_command_from_loader(content: &str) -> String {
+    let mut filtered_lines: Vec<&str> = normalize_newlines(content)
+        .lines()
+        .filter(|line| !is_ota_hook_line(line))
+        .collect();
 
-    if loader_contains_ota_command(&normalized) {
-        return format!("{}\n", normalized.trim_end_matches('\n'));
+    while filtered_lines.last().is_some_and(|line| line.trim().is_empty()) {
+        filtered_lines.pop();
     }
 
-    let base = if normalized.trim().is_empty() {
-        DEFAULT_LOADER_SCRIPT.trim_end_matches('\n').to_string()
-    } else {
-        normalized.trim_end_matches('\n').to_string()
-    };
+    if filtered_lines.is_empty() {
+        return String::new();
+    }
 
-    format!("{}\n{}\n", base, OTA_SCRIPT_LOADER_COMMAND)
+    format!("{}\n", filtered_lines.join("\n"))
 }
 
 fn append_init_command_to_loader(content: &str) -> String {
@@ -608,35 +470,6 @@ fn loader_is_plain_legacy_bootstrap(content: &str) -> bool {
         .all(|line| *line == INIT_SCRIPT_LOADER_COMMAND)
 }
 
-fn ota_script_needs_update(content: &str) -> bool {
-    content.contains("UDX710 OTA bootstrap")
-        && !content.contains("repair_missing_active_slot()")
-}
-
-fn ensure_ota_script() -> Result<(), String> {
-    let ota_path = PathBuf::from(OTA_SCRIPT_PATH);
-    let should_write_default = match fs::read_to_string(&ota_path) {
-        Ok(content) => content.trim().is_empty() || ota_script_needs_update(&content),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
-        Err(e) => return Err(format!("Failed to read ota.sh: {}", e)),
-    };
-
-    if !should_write_default {
-        return Ok(());
-    }
-
-    if let Some(parent) = ota_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create ota.sh directory: {}", e))?;
-    }
-
-    fs::write(&ota_path, DEFAULT_OTA_SCRIPT)
-        .map_err(|e| format!("Failed to write ota.sh: {}", e))?;
-    set_executable_permissions(&ota_path)?;
-
-    Ok(())
-}
-
 fn set_executable_permissions(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -662,19 +495,25 @@ pub fn ensure_loader_hooks_init() -> Result<(), String> {
         String::new()
     };
 
-    let base_content = if loader_uses_ab_bootstrap(&current_content) {
+    let stripped_content = remove_ota_command_from_loader(&current_content);
+    let missing_backend_command = !stripped_content
+        .lines()
+        .any(|line| line.trim() == "/home/root/udx710 -p 80 &");
+
+    let base_content = if loader_uses_ab_bootstrap(&current_content)
+        || loader_contains_ota_command(&current_content)
+        || missing_backend_command
+    {
         DEFAULT_LOADER_SCRIPT.to_string()
     } else if current_content.trim().is_empty()
         || loader_is_plain_legacy_bootstrap(&current_content)
     {
         DEFAULT_LOADER_SCRIPT.to_string()
     } else {
-        current_content
+        stripped_content
     };
 
-    let updated_content = append_init_command_to_loader(&append_ota_command_to_loader(&base_content));
-
-    ensure_ota_script()?;
+    let updated_content = append_init_command_to_loader(&base_content);
 
     if let Some(parent) = loader_path.parent() {
         fs::create_dir_all(parent)
@@ -684,6 +523,8 @@ pub fn ensure_loader_hooks_init() -> Result<(), String> {
     fs::write(&loader_path, updated_content)
         .map_err(|e| format!("Failed to write loader.sh: {}", e))?;
     set_executable_permissions(&loader_path)?;
+
+    let _ = fs::remove_file("/home/root/ota.sh");
 
     Ok(())
 }
@@ -730,11 +571,10 @@ pub fn set_init_script(script: String) -> Result<crate::models::InitScriptRespon
 mod tests {
     use super::{
         append_init_command_to_loader,
-        append_ota_command_to_loader,
         loader_contains_init_command,
         loader_contains_ota_command,
+        remove_ota_command_from_loader,
         INIT_SCRIPT_LOADER_COMMAND,
-        OTA_SCRIPT_LOADER_COMMAND,
     };
 
     #[test]
@@ -770,28 +610,11 @@ mod tests {
     }
 
     #[test]
-    fn append_ota_command_once_for_new_loader() {
-        let loader = "#!/bin/sh\n/home/root/ttyd/start.sh &\n/home/root/udx710 -p 80 &\n";
-        let updated = append_ota_command_to_loader(loader);
+    fn remove_ota_command_from_loader_strips_old_hook() {
+        let loader = "#!/bin/sh\n/home/root/ttyd/start.sh &\nsh /home/root/ota.sh &\n/home/root/udx710 -p 80 &\n";
+        let updated = remove_ota_command_from_loader(loader);
 
-        assert!(updated.contains(OTA_SCRIPT_LOADER_COMMAND));
-        assert_eq!(updated.matches(OTA_SCRIPT_LOADER_COMMAND).count(), 1);
-    }
-
-    #[test]
-    fn append_ota_command_is_idempotent() {
-        let loader = format!(
-            "#!/bin/sh\n/home/root/ttyd/start.sh &\n{}\n",
-            OTA_SCRIPT_LOADER_COMMAND
-        );
-        let updated = append_ota_command_to_loader(&loader);
-
-        assert_eq!(updated.matches(OTA_SCRIPT_LOADER_COMMAND).count(), 1);
-    }
-
-    #[test]
-    fn loader_detects_ota_command() {
-        let loader = format!("#!/bin/sh\n{}\n", OTA_SCRIPT_LOADER_COMMAND);
-        assert!(loader_contains_ota_command(&loader));
+        assert!(!loader_contains_ota_command(&updated));
+        assert!(updated.contains("/home/root/udx710 -p 80 &"));
     }
 }
