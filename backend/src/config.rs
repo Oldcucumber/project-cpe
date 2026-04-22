@@ -406,7 +406,8 @@ fn loader_contains_init_command(content: &str) -> bool {
 }
 
 fn remove_ota_command_from_loader(content: &str) -> String {
-    let mut filtered_lines: Vec<&str> = normalize_newlines(content)
+    let normalized = normalize_newlines(content);
+    let mut filtered_lines: Vec<&str> = normalized
         .lines()
         .filter(|line| !is_ota_hook_line(line))
         .collect();
