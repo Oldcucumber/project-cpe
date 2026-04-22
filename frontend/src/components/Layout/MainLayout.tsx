@@ -14,6 +14,7 @@ import { Box, type Theme, useMediaQuery, useTheme } from '@mui/material'
 
 import { api } from '../../api'
 import { RefreshContext } from '../../contexts/RefreshContext'
+import { usePageVisibility } from '../../hooks/useAdaptivePolling'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 
@@ -22,10 +23,15 @@ const DEFAULT_REFRESH_INTERVAL = 5000
 // Keep the heartbeat comfortably below the backend timeout floor so 1s/3s polling
 // does not drift onto the timeout boundary.
 const HEARTBEAT_MIN_INTERVAL = 5000
+const HIDDEN_HEARTBEAT_MIN_INTERVAL = 30000
 
-function getHeartbeatInterval(refreshInterval: number) {
+function getHeartbeatInterval(refreshInterval: number, isPageVisible: boolean) {
   if (refreshInterval <= 0) {
-    return 20000
+    return isPageVisible ? 20000 : 60000
+  }
+
+  if (!isPageVisible) {
+    return Math.max(refreshInterval * 12, HIDDEN_HEARTBEAT_MIN_INTERVAL)
   }
 
   return Math.max(refreshInterval * 3, HEARTBEAT_MIN_INTERVAL)
@@ -34,6 +40,7 @@ function getHeartbeatInterval(refreshInterval: number) {
 export default function MainLayout() {
   const theme = useTheme<Theme>()
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+  const isPageVisible = usePageVisibility()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [desktopOpen, setDesktopOpen] = useState(true)
   const [refreshInterval, setRefreshIntervalState] = useState(DEFAULT_REFRESH_INTERVAL)
@@ -83,13 +90,13 @@ export default function MainLayout() {
 
     const timer = window.setInterval(() => {
       void sendHeartbeat()
-    }, getHeartbeatInterval(refreshInterval))
+    }, getHeartbeatInterval(refreshInterval, isPageVisible))
 
     return () => {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [refreshInterval])
+  }, [isPageVisible, refreshInterval])
 
   const handleDrawerToggle = () => {
     if (isMobile) {

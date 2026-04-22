@@ -8,8 +8,13 @@
  *
  * Copyright (c) 2025 by 1orz, All Rights Reserved.
  */
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { api } from '@/api'
+import {
+  getAdaptiveRefreshInterval,
+  useAdaptivePolling,
+  usePageVisibility,
+} from '@/hooks/useAdaptivePolling'
 import type {
   DeviceInfo,
   NetworkInfo,
@@ -57,6 +62,9 @@ export interface DashboardActions {
   toggleRoaming: () => Promise<void>
   loadData: () => Promise<void>
 }
+
+const CONNECTIVITY_MIN_REFRESH_INTERVAL = 15_000
+const CONNECTIVITY_HIDDEN_MIN_REFRESH_INTERVAL = 60_000
 
 export function useDashboardData(refreshInterval: number, refreshKey: number) {
   const [initialLoading, setInitialLoading] = useState(true)
@@ -111,16 +119,22 @@ export function useDashboardData(refreshInterval: number, refreshKey: number) {
     return `${label}: ${message}`
   }, [])
 
+  const isPageVisible = usePageVisibility()
+  const connectivityRefreshInterval = getAdaptiveRefreshInterval(
+    Math.max(refreshInterval, CONNECTIVITY_MIN_REFRESH_INTERVAL),
+    isPageVisible,
+    {
+      hiddenMinInterval: CONNECTIVITY_HIDDEN_MIN_REFRESH_INTERVAL,
+      hiddenMultiplier: 4,
+    }
+  )
+
   const loadData = useCallback(async () => {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
     setError(null)
 
-    const extendedRequests = Promise.allSettled([
-      api.getImsStatus(),
-      api.getConnectivity(),
-      api.getRoamingStatus(),
-    ])
+    const extendedRequests = Promise.allSettled([api.getImsStatus(), api.getRoamingStatus()])
 
     const baseResults = await Promise.allSettled([
       api.getDeviceInfo(),
@@ -217,14 +231,7 @@ export function useDashboardData(refreshInterval: number, refreshKey: number) {
       extendedErrors.push(formatRequestError('IMS 状态', imsResult.reason))
     }
 
-    const connectivityResult = extendedResults[1]
-    if (connectivityResult.status === 'fulfilled') {
-      if (connectivityResult.value.data) setConnectivity(connectivityResult.value.data)
-    } else {
-      extendedErrors.push(formatRequestError('连通性检测', connectivityResult.reason))
-    }
-
-    const roamingResult = extendedResults[2]
+    const roamingResult = extendedResults[1]
     if (roamingResult.status === 'fulfilled') {
       if (roamingResult.value.data) setRoaming(roamingResult.value.data)
     } else {
@@ -235,6 +242,17 @@ export function useDashboardData(refreshInterval: number, refreshKey: number) {
       setError(extendedErrors[0])
     }
   }, [formatRequestError, updateSpeedHistory])
+
+  const loadConnectivity = useCallback(async () => {
+    try {
+      const response = await api.getConnectivity()
+      if (response.data) {
+        setConnectivity(response.data)
+      }
+    } catch (errorValue) {
+      setError((currentError) => currentError ?? formatRequestError('连通性检测', errorValue))
+    }
+  }, [formatRequestError])
 
   const toggleData = useCallback(async () => {
     if (dataStatus === null) return
@@ -276,23 +294,17 @@ export function useDashboardData(refreshInterval: number, refreshKey: number) {
     }
   }, [roaming])
 
-  useEffect(() => {
-    const initialTimer = window.setTimeout(() => {
-      void loadData()
-    }, 0)
+  useAdaptivePolling({
+    refreshInterval,
+    refreshKey,
+    onTick: loadData,
+  })
 
-    if (refreshInterval > 0) {
-      const interval = setInterval(() => void loadData(), refreshInterval)
-      return () => {
-        window.clearTimeout(initialTimer)
-        clearInterval(interval)
-      }
-    }
-
-    return () => {
-      window.clearTimeout(initialTimer)
-    }
-  }, [refreshInterval, refreshKey, loadData])
+  useAdaptivePolling({
+    refreshInterval: connectivityRefreshInterval,
+    refreshKey,
+    onTick: loadConnectivity,
+  })
 
   return {
     initialLoading,
